@@ -95,8 +95,81 @@ class pdf_processor {
         
         imagedestroy($src);
         imagedestroy($dest);
-        
+
         return base64_encode($imagedata);
+    }
+
+    /**
+     * Trims the blank paper margin off a cropped snippet so it hugs the actual ink.
+     *
+     * Response areas are usually drawn taller/wider than the handwriting they capture
+     * (to tolerate slight scan drift and give students room to write), so the raw crop
+     * has a lot of blank space around the content. Stretching or aspect-fitting that raw
+     * crop into the display box can't fix this - the blank margin is baked into the
+     * pixels. Trimming it here lets the display/PDF renderers anchor the actual content
+     * to the box, the same way text fields anchor to their measured text height.
+     *
+     * @param string $imagedata Raw JPEG binary data.
+     * @return string Raw JPEG binary data, cropped to the detected ink bounding box (with
+     *                 a small padding margin), or the original data unchanged if no ink
+     *                 was detected or the image could not be read.
+     */
+    public function trim_whitespace_border($imagedata) {
+        $src = @imagecreatefromstring($imagedata);
+        if (!$src) {
+            return $imagedata;
+        }
+
+        $width = imagesx($src);
+        $height = imagesy($src);
+        $threshold = 235; // Pixels brighter than this (average of R/G/B) are treated as blank paper.
+
+        $minx = $width;
+        $miny = $height;
+        $maxx = -1;
+        $maxy = -1;
+
+        for ($y = 0; $y < $height; $y++) {
+            for ($x = 0; $x < $width; $x++) {
+                $rgb = imagecolorat($src, $x, $y);
+                $lum = ((($rgb >> 16) & 0xFF) + (($rgb >> 8) & 0xFF) + ($rgb & 0xFF)) / 3;
+                if ($lum < $threshold) {
+                    $minx = min($minx, $x);
+                    $maxx = max($maxx, $x);
+                    $miny = min($miny, $y);
+                    $maxy = max($maxy, $y);
+                }
+            }
+        }
+
+        if ($maxx < 0) {
+            // No ink detected (blank response) - nothing to trim.
+            imagedestroy($src);
+            return $imagedata;
+        }
+
+        // Pad around the detected ink so strokes aren't clipped right at the edge.
+        $padx = (int) max(2, ($maxx - $minx) * 0.15);
+        $pady = (int) max(2, ($maxy - $miny) * 0.15);
+        $minx = max(0, $minx - $padx);
+        $miny = max(0, $miny - $pady);
+        $maxx = min($width - 1, $maxx + $padx);
+        $maxy = min($height - 1, $maxy + $pady);
+
+        $neww = $maxx - $minx + 1;
+        $newh = $maxy - $miny + 1;
+
+        $dest = imagecreatetruecolor($neww, $newh);
+        imagecopyresampled($dest, $src, 0, 0, $minx, $miny, $neww, $newh, $neww, $newh);
+
+        ob_start();
+        imagejpeg($dest, null, 90);
+        $trimmed = ob_get_clean();
+
+        imagedestroy($src);
+        imagedestroy($dest);
+
+        return $trimmed;
     }
 
     /**
@@ -187,7 +260,11 @@ class pdf_processor {
                     if ($item) {
                         $snippetfile = $fs->get_file($context->id, 'mod_paper', 'responsesnippet', $item->id, '/', 'snippet.jpg');
                         if ($snippetfile) {
-                            $pdf->Image('@' . $snippetfile->get_content(), $x_mm, $y_mm, $w_mm, $h_mm, 'JPG', '', '', false, 300, '', false, false, 0, 'CM');
+                            // Snippets are trimmed to their ink bounding box at save time (see
+                            // process_submissions_task), so fit proportionally (no distortion) and
+                            // anchor to the bottom-center of the box - matching the box's writing
+                            // line, the same way text fields anchor to it via their measured height.
+                            $pdf->Image('@' . $snippetfile->get_content(), $x_mm, $y_mm, $w_mm, $h_mm, 'JPG', '', '', false, 300, '', false, false, 0, 'CB');
                         }
                     }
                 } else if ($displaytext !== '') {

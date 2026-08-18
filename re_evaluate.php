@@ -20,9 +20,9 @@ require_login($course, true, $cm);
 require_capability('mod/paper:manage', context_module::instance($cm->id));
 require_sesskey();
 
-// Clear existing correctedtext and feedback for all evaluations of this paper
-$sql = "UPDATE {paper_eval_items} 
-        SET correctedtext = '', feedback = '' 
+// Clear existing correctedtext, feedback and grade for all evaluations of this paper
+$sql = "UPDATE {paper_eval_items}
+        SET correctedtext = '', feedback = '', itemgrade = NULL
         WHERE evalid IN (
             SELECT id FROM {paper_evaluations} WHERE paperid = :paperid
         )";

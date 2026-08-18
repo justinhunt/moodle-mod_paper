@@ -1,4 +1,19 @@
 <?php
+// This file is part of Moodle - https://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
+
 /**
  * OpenAI Handler
  *
@@ -19,18 +34,18 @@ class openai_handler {
         $this->apikey = get_config('mod_paper', 'openaicredentials');
     }
 
-    protected function call_openai($messages, $max_tokens = 1000) {
+    protected function call_openai($messages, $maxtokens = 1000) {
         if (empty($this->apikey)) {
             throw new \moodle_exception('openaicredentialsnotset', 'mod_paper');
         }
 
         $url = 'https://api.openai.com/v1/chat/completions';
-        
+
         $data = [
-            'model' => 'gpt-4o', // Ensure we use vision compatible model
+            'model' => 'gpt-4o',
             'messages' => $messages,
-            'max_tokens' => $max_tokens,
-            'temperature' => 0.2
+            'max_tokens' => $maxtokens,
+            'temperature' => 0.2,
         ];
 
         $ch = curl_init();
@@ -40,7 +55,7 @@ class openai_handler {
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
-            'Authorization: Bearer ' . $this->apikey
+            'Authorization: Bearer ' . $this->apikey,
         ]);
 
         $result = curl_exec($ch);
@@ -70,18 +85,18 @@ class openai_handler {
                 'role' => 'user',
                 'content' => [
                     ['type' => 'text', 'text' => $prompt],
-                    ['type' => 'image_url', 'image_url' => ['url' => "data:image/jpeg;base64,{$imagebase64}"]]
-                ]
-            ]
+                    ['type' => 'image_url', 'image_url' => ['url' => "data:image/jpeg;base64,{$imagebase64}"]],
+                ],
+            ],
         ];
 
-        $json_str = $this->call_openai($messages);
-        
-        // clean any markdown from response
-        $json_str = preg_replace('/```json\s*/', '', $json_str);
-        $json_str = preg_replace('/```\s*/', '', $json_str);
+        $jsonstr = $this->call_openai($messages);
 
-        return json_decode($json_str);
+        // clean any markdown from response
+        $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
+        $jsonstr = preg_replace('/```\s*/', '', $jsonstr);
+
+        return json_decode($jsonstr);
     }
 
     public function extract_text($imagebase64, $bbox) {
@@ -91,18 +106,24 @@ class openai_handler {
         // or ask the AI to only look at the specific bounding box coordinates. Since GPT-4V doesn't
         // accept coordinate-based cropping natively, cropping in PHP (using GD/Imagick) before calling this
         // is the standard approach. For now we assume $imagebase64 is the ALREADY CROPPED image.
-        
+
         $messages = [
             [
                 'role' => 'user',
                 'content' => [
                     ['type' => 'text', 'text' => $prompt],
-                    ['type' => 'image_url', 'image_url' => ['url' => "data:image/jpeg;base64,{$imagebase64}"]]
-                ]
-            ]
+                    ['type' => 'image_url', 'image_url' => ['url' => "data:image/jpeg;base64,{$imagebase64}"]],
+                ],
+            ],
         ];
 
-        return trim($this->call_openai($messages));
+        $text = trim($this->call_openai($messages));
+
+        if (strcasecmp($text, 'NOTHING') === 0) {
+            return '';
+        }
+
+        return $text;
     }
 
     public function evaluate_response($studenttext, $criteria, $targetlang, $feedbacklang) {
@@ -112,7 +133,7 @@ class openai_handler {
         $prompt .= "Feedback language: {$feedbacklang}\n";
         $prompt .= "Question asked: {$criteria->question}\n";
         $prompt .= "Student's answer: {$studenttext}\n";
-        
+
         if ($criteria->correctanswermode !== 'none' && !empty($criteria->correctanswer)) {
             $prompt .= "Correct answer: {$criteria->correctanswer}. Mode: {$criteria->correctanswermode}.\n";
         }
@@ -121,20 +142,20 @@ class openai_handler {
         $prompt .= "- 'correctedtext': The grammatically corrected text. Strikethrough incorrect text like ~~this~~ and bold corrected text like **this**. (If grammar corrections are 'no', return empty).\n";
         $prompt .= "- 'feedback': Overall feedback in the feedback language. Explain why it is wrong and what is right.\n";
         $prompt .= "- 'score': A number from 0 to {$criteria->maxgrade} based on these instructions: {$criteria->gradeinstructions}\n";
-        
+
         $messages = [
             [
                 'role' => 'user',
-                'content' => $prompt
-            ]
+                'content' => $prompt,
+            ],
         ];
 
-        $json_str = $this->call_openai($messages);
-        
-        $json_str = preg_replace('/```json\s*/', '', $json_str);
-        $json_str = preg_replace('/```\s*/', '', $json_str);
+        $jsonstr = $this->call_openai($messages);
 
-        return json_decode($json_str);
+        $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
+        $jsonstr = preg_replace('/```\s*/', '', $jsonstr);
+
+        return json_decode($jsonstr);
     }
     public function batch_process_evaluations($area, $items, $feedbacklanguage = 'English') {
         if (empty($items)) {
@@ -208,45 +229,49 @@ class openai_handler {
         $messages = [
             [
                 'role' => 'system',
-                'content' => 'You are a precise grading assistant. Return only valid JSON.'
+                'content' => 'You are a precise grading assistant. Return only valid JSON.',
             ],
             [
                 'role' => 'user',
-                'content' => $prompt
-            ]
+                'content' => $prompt,
+            ],
         ];
 
-        $json_str = $this->call_openai($messages);
+        // Max tokens needs to be higher for batch processing.
+        $maxtokens = 4000;
+        $jsonstr = $this->call_openai($messages, $maxtokens);
 
-        $json_str = preg_replace('/```json\s*/', '', $json_str);
-        $json_str = preg_replace('/```\s*/', '', $json_str);
+        $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
+        $jsonstr = preg_replace('/```\s*/', '', $jsonstr);
 
-        return json_decode($json_str, true) ?: [];
+        return json_decode($jsonstr, true) ?: [];
     }
 
     public function batch_correct_grammar($texts) {
         if (empty($texts)) {
             return [];
         }
-        
+
         $prompt = "You are an English teacher correcting grammar. You are given a JSON object where keys are IDs and values are student responses.\n";
         $prompt .= "Return a JSON object with the exact same keys, where the values are the grammatically corrected responses. Do not use strikethroughs or bold in this response, just the corrected plain text.\n";
         $prompt .= "If a response is already perfectly correct, return it exactly as is.\n";
         $prompt .= "If a response is empty, return an empty string.\n";
         $prompt .= "Input:\n" . json_encode($texts);
-        
+
         $messages = [
             [
                 'role' => 'user',
-                'content' => $prompt
-            ]
+                'content' => $prompt,
+            ],
         ];
 
-        $json_str = $this->call_openai($messages);
-        
-        $json_str = preg_replace('/```json\s*/', '', $json_str);
-        $json_str = preg_replace('/```\s*/', '', $json_str);
+        // Max tokens needs to be higher for batch processing.
+        $maxtokens = 4000;
+        $jsonstr = $this->call_openai($messages, $maxtokens);
 
-        return json_decode($json_str, true) ?: [];
+        $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
+        $jsonstr = preg_replace('/```\s*/', '', $jsonstr);
+
+        return json_decode($jsonstr, true) ?: [];
     }
 }

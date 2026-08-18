@@ -118,7 +118,7 @@ class process_submissions_task extends \core\task\adhoc_task {
                     
                     // If it's a Display Only field, save the cropped image snippet
                     if ($area->isnamefield == 3) {
-                        $snippetdata = base64_decode($cropped_base64);
+                        $snippetdata = $pdfprocessor->trim_whitespace_border(base64_decode($cropped_base64));
                         $filerecord = [
                             'contextid' => $context->id,
                             'component' => 'mod_paper',

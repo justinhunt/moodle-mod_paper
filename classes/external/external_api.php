@@ -84,7 +84,7 @@ class external_api extends \core_external\external_api {
             }
         }
 
-        // Also check for any eval items still awaiting grammar correction.
+        // Also check for any eval items still awaiting evaluation.
         $pendingitems = false;
         foreach ($evals as $eval) {
             $sql = "SELECT COUNT(pei.id)
@@ -92,8 +92,7 @@ class external_api extends \core_external\external_api {
                     JOIN {paper_response_areas} pra ON pra.id = pei.responseareaid
                     WHERE pei.evalid = :evalid
                       AND pra.isnamefield = 0
-                      AND pei.correctedtext = ''
-                      AND pra.grammarcorrections != 'no'";
+                      AND pei.itemgrade IS NULL";
             if ($DB->count_records_sql($sql, ['evalid' => $eval->id]) > 0) {
                 $pendingitems = true;
                 break;
@@ -138,7 +137,7 @@ class external_api extends \core_external\external_api {
      * Update an evaluation item
      */
     public static function update_eval_item($cmid, $evalid, $areaid, $itemid = 0, $grade = null, $correctedtext = '', $feedback = '') {
-        global $DB;
+        global $DB, $PAGE, $OUTPUT;
 
         $params = self::validate_parameters(self::update_eval_item_parameters(), [
             'cmid' => $cmid,
@@ -230,9 +229,7 @@ class external_api extends \core_external\external_api {
             'grade' => (round($item->itemgrade, 2) + 0),
         ];
 
-        global $PAGE;
-        $renderer = $PAGE->get_renderer('mod_paper');
-        $newhtml = $renderer->render_from_template('mod_paper/eval_item_content', $rendercontext);
+        $newhtml = $OUTPUT->render_from_template('mod_paper/eval_item_content', $rendercontext);
 
         return [
             'success' => true,

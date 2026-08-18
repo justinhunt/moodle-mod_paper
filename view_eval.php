@@ -110,6 +110,8 @@ if ($file) {
         }
 
         $targetfontcss = \mod_paper\utils::get_css_font_family($paper->targetlanguagefont ?? 'courier');
+        // Bottom-align name/username text and display-only snippets, so both sit on the box's
+        // writing line regardless of how generously the box itself was drawn.
         $valign = $area->isnamefield ? 'justify-content: flex-end;' : 'justify-content: flex-start;';
         $style = sprintf(
             'position: absolute; left: %s%%; top: %s%%; width: %s%%; height: %s%%; ' .
@@ -139,7 +141,7 @@ if ($file) {
             $snippeturl = moodle_url::make_pluginfile_url($context->id, 'mod_paper', 'responsesnippet', $itemid, '/', 'snippet.jpg');
             $displayhtml = html_writer::empty_tag('img', [
                 'src' => $snippeturl,
-                'style' => 'max-width: 100%; max-height: 100%; object-fit: contain;',
+                'style' => 'display: block; max-width: 100%; max-height: 100%; object-fit: contain; align-self: center;',
             ]);
         } else if ($corrected !== '' && $area->grammarcorrections !== 'no' && !$area->isnamefield) {
             $displayhtml = \mod_paper\utils::build_combined_diff($ocr, $corrected);

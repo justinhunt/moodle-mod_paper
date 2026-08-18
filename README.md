@@ -44,3 +44,9 @@ NB At the moment the worksheet must be A4 size and portrait orientation.
 - `mod/paper:addinstance`: Allow creating new Paper activities.
 - `mod/paper:submit`: Allow students to view their evaluations.
 - `mod/paper:manage`: Allow teachers to setup templates, process scans, and grade work.
+
+## Developer Documentation
+
+For detailed architectural diagrams, database schema references, adhoc task lifecycles, and past development milestones, see [DEVELOPER.md](DEVELOPER.md).
+
+

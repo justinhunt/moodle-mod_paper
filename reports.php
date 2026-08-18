@@ -70,7 +70,7 @@ if (!empty($evaluations)) {
         $sql = "SELECT COUNT(pei.id)
                 FROM {paper_eval_items} pei
                 JOIN {paper_response_areas} pra ON pra.id = pei.responseareaid
-                WHERE pei.evalid = :evalid AND pra.isnamefield = 0 AND pei.correctedtext = '' AND pra.grammarcorrections != 'no'";
+                WHERE pei.evalid = :evalid AND pra.isnamefield = 0 AND pei.itemgrade IS NULL";
         $pendingcount = $DB->count_records_sql($sql, ['evalid' => $eval->id]);
 
         $actions = [];
