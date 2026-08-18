@@ -18,7 +18,7 @@
  * Admin settings for mod_paper
  *
  * @package    mod_paper
- * @copyright  2024 Your Name
+ * @copyright  2024 Justin Hunt <poodllsupport@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
