@@ -59,6 +59,55 @@ if ($ADMIN->fulltree) {
         get_string('openaicredentials_desc', 'mod_paper'),
         ''));
 
+    $settings->add(new admin_setting_heading('mod_paper/openaimodel_heading',
+        get_string('openaimodel_heading', 'mod_paper'), ''));
+
+    $modeloptions = [
+        'gpt-5.6-luna' => 'gpt-5.6-luna (fastest, cheapest)',
+        'gpt-5.6-terra' => 'gpt-5.6-terra (balanced)',
+        'gpt-5.6-sol' => 'gpt-5.6-sol (most capable)',
+        'gpt-4o' => 'gpt-4o (legacy)',
+    ];
+
+    $settings->add(new admin_setting_configselect('mod_paper/openaimodel',
+        get_string('openaimodel', 'mod_paper'),
+        get_string('openaimodel_desc', 'mod_paper'),
+        'gpt-5.6-luna', $modeloptions));
+
+    $reasoningoptions = [
+        'none' => 'none',
+        'low' => 'low',
+        'medium' => 'medium',
+        'high' => 'high',
+        'xhigh' => 'xhigh',
+        'max' => 'max',
+    ];
+
+    $settings->add(new admin_setting_configselect('mod_paper/openaireasoningeffort',
+        get_string('openaireasoningeffort', 'mod_paper'),
+        get_string('openaireasoningeffort_desc', 'mod_paper'),
+        'low', $reasoningoptions));
+
+    $settings->add(new admin_setting_configselect('mod_paper/openaiocrmodel',
+        get_string('openaiocrmodel', 'mod_paper'),
+        get_string('openaiocrmodel_desc', 'mod_paper'),
+        'gpt-4o', $modeloptions));
+
+    $settings->add(new admin_setting_configselect('mod_paper/openaiocrreasoningeffort',
+        get_string('openaiocrreasoningeffort', 'mod_paper'),
+        get_string('openaiocrreasoningeffort_desc', 'mod_paper'),
+        'none', $reasoningoptions));
+
+    $settings->add(new admin_setting_configtext('mod_paper/openaimaxtokens',
+        get_string('openaimaxtokens', 'mod_paper'),
+        get_string('openaimaxtokens_desc', 'mod_paper'),
+        2000, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('mod_paper/openaimaxtokensbatch',
+        get_string('openaimaxtokensbatch', 'mod_paper'),
+        get_string('openaimaxtokensbatch_desc', 'mod_paper'),
+        8000, PARAM_INT));
+
     $settings->add(new admin_setting_heading('mod_paper/gradingpresets_heading',
         get_string('gradingpresets', 'mod_paper'), ''));
 

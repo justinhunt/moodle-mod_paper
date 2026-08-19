@@ -29,24 +29,119 @@ defined('MOODLE_INTERNAL') || die();
 class openai_handler {
 
     protected $apikey;
+    protected $model;
+    protected $ocrmodel;
+    protected $reasoningeffort;
+    protected $ocrreasoningeffort;
+    protected $maxtokens;
+    protected $maxtokensbatch;
 
     public function __construct() {
         $this->apikey = get_config('mod_paper', 'openaicredentials');
+        $this->model = get_config('mod_paper', 'openaimodel') ?: 'gpt-5.6-luna';
+        $this->ocrmodel = get_config('mod_paper', 'openaiocrmodel') ?: 'gpt-4o';
+        $this->reasoningeffort = get_config('mod_paper', 'openaireasoningeffort') ?: 'low';
+        $this->ocrreasoningeffort = get_config('mod_paper', 'openaiocrreasoningeffort') ?: 'none';
+        $this->maxtokens = (int) (get_config('mod_paper', 'openaimaxtokens') ?: 2000);
+        $this->maxtokensbatch = (int) (get_config('mod_paper', 'openaimaxtokensbatch') ?: 8000);
     }
 
-    protected function call_openai($messages, $maxtokens = 1000) {
+    /**
+     * Reasoning models (gpt-5.x, o-series) take a nested reasoning.effort object instead
+     * of a flat temperature, unlike gpt-4o and other classic models. OCR and grading can
+     * use different models, so this takes the model to check rather than assuming $this->model.
+     */
+    protected function is_reasoning_model($model) {
+        return (bool) preg_match('/^(o[0-9]|gpt-5)/', $model);
+    }
+
+    /**
+     * Translate a chat-completions-style content value (string, or array of
+     * {type: text|image_url, ...} parts) into Responses API input_text/input_image parts.
+     */
+    protected function convert_content($content) {
+        if (is_string($content)) {
+            return $content;
+        }
+
+        $parts = [];
+        foreach ($content as $part) {
+            if ($part['type'] === 'text') {
+                $parts[] = ['type' => 'input_text', 'text' => $part['text']];
+            } else if ($part['type'] === 'image_url') {
+                $parts[] = ['type' => 'input_image', 'image_url' => $part['image_url']['url']];
+            }
+        }
+        return $parts;
+    }
+
+    /**
+     * Pull the assistant's text out of a Responses API result, falling back to walking
+     * the output array if the output_text convenience field isn't present.
+     */
+    protected function extract_output_text($response) {
+        if (isset($response->output_text)) {
+            return $response->output_text;
+        }
+
+        if (!empty($response->output)) {
+            foreach ($response->output as $item) {
+                if (($item->type ?? null) === 'message' && !empty($item->content)) {
+                    foreach ($item->content as $part) {
+                        if (($part->type ?? null) === 'output_text') {
+                            return $part->text;
+                        }
+                    }
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * $messages uses the familiar chat-completions shape (role/content, with an optional
+     * leading system message) and is translated here into a Responses API (v1/responses)
+     * request: system -> top-level instructions, max_output_tokens, reasoning.effort.
+     */
+    protected function call_openai($messages, $maxtokens = null, $model = null, $reasoningeffort = null) {
         if (empty($this->apikey)) {
             throw new \moodle_exception('openaicredentialsnotset', 'mod_paper');
         }
 
-        $url = 'https://api.openai.com/v1/chat/completions';
+        $url = 'https://api.openai.com/v1/responses';
+
+        $maxtokens = $maxtokens ?? $this->maxtokens;
+        $model = $model ?? $this->model;
+
+        $instructions = null;
+        $input = [];
+        foreach ($messages as $message) {
+            if ($message['role'] === 'system') {
+                $instructions = is_string($message['content']) ? $message['content'] : json_encode($message['content']);
+                continue;
+            }
+            $input[] = [
+                'role' => $message['role'],
+                'content' => $this->convert_content($message['content']),
+            ];
+        }
 
         $data = [
-            'model' => 'gpt-4o',
-            'messages' => $messages,
-            'max_tokens' => $maxtokens,
-            'temperature' => 0.2,
+            'model' => $model,
+            'input' => $input,
+            'max_output_tokens' => $maxtokens,
         ];
+
+        if ($instructions !== null) {
+            $data['instructions'] = $instructions;
+        }
+
+        if ($this->is_reasoning_model($model)) {
+            $data['reasoning'] = ['effort' => $reasoningeffort ?? $this->reasoningeffort];
+        } else {
+            $data['temperature'] = 0.2;
+        }
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -71,7 +166,7 @@ class openai_handler {
             throw new \moodle_exception('OpenAI Error: ' . $response->error->message);
         }
 
-        return $response->choices[0]->message->content;
+        return $this->extract_output_text($response);
     }
 
     public function identify_response_areas($imagebase64) {
@@ -90,7 +185,10 @@ class openai_handler {
             ],
         ];
 
-        $jsonstr = $this->call_openai($messages);
+        // OCR/perception uses its own admin-configured model and reasoning effort,
+        // independent of the grading model/effort - vision fidelity and grading quality
+        // don't necessarily come from the same model.
+        $jsonstr = $this->call_openai($messages, null, $this->ocrmodel, $this->ocrreasoningeffort);
 
         // clean any markdown from response
         $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
@@ -100,7 +198,12 @@ class openai_handler {
     }
 
     public function extract_text($imagebase64, $bbox) {
-        $prompt = "Extract the handwritten or typed text from the image provided. Only output the text you see, nothing else. If it's empty, output NOTHING.";
+        $prompt = "You are an OCR transcription engine, not a proofreader or editor. Extract the handwritten or "
+            . "typed text from the image EXACTLY as it appears, character for character.\n"
+            . "Do NOT correct spelling, grammar, punctuation, or capitalization, even if it looks like an obvious "
+            . "mistake. Preserve every error exactly as written - this text will be graded for those errors later.\n"
+            . "Example: if the image shows \"I has a aple\", output exactly \"I has a aple\", NOT \"I have an apple\".\n"
+            . "Only output the text you see, nothing else. If it's empty, output NOTHING.";
 
         // Note: For a real implementation, we either need to crop the image *before* sending to save tokens,
         // or ask the AI to only look at the specific bounding box coordinates. Since GPT-4V doesn't
@@ -117,7 +220,10 @@ class openai_handler {
             ],
         ];
 
-        $text = trim($this->call_openai($messages));
+        // OCR/perception uses its own admin-configured model and reasoning effort,
+        // independent of the grading model/effort - preserving errors verbatim is the
+        // whole point of this plugin, and different models vary a lot on that.
+        $text = trim($this->call_openai($messages, null, $this->ocrmodel, $this->ocrreasoningeffort));
 
         if (strcasecmp($text, 'NOTHING') === 0) {
             return '';
@@ -237,9 +343,7 @@ class openai_handler {
             ],
         ];
 
-        // Max tokens needs to be higher for batch processing.
-        $maxtokens = 4000;
-        $jsonstr = $this->call_openai($messages, $maxtokens);
+        $jsonstr = $this->call_openai($messages, $this->maxtokensbatch);
 
         $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
         $jsonstr = preg_replace('/```\s*/', '', $jsonstr);
@@ -265,9 +369,7 @@ class openai_handler {
             ],
         ];
 
-        // Max tokens needs to be higher for batch processing.
-        $maxtokens = 4000;
-        $jsonstr = $this->call_openai($messages, $maxtokens);
+        $jsonstr = $this->call_openai($messages, $this->maxtokensbatch);
 
         $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
         $jsonstr = preg_replace('/```\s*/', '', $jsonstr);
