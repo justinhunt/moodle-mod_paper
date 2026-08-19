@@ -156,17 +156,19 @@ function paper_pluginfile($course, $cm, $context, $filearea, array $args, $force
         if ($evalid > 0) {
             $evaluations = $DB->get_records('paper_evaluations', ['id' => $evalid]);
             $filename = 'evaluation_' . $evalid . '.pdf';
+            $includesummary = false;
         } else {
             $evaluations = $DB->get_records('paper_evaluations', ['paperid' => $paper->id]);
             $filename = 'evaluations_' . $paper->id . '.pdf';
+            $includesummary = true;
         }
-        
+
         if (empty($evaluations)) {
             send_file_not_found();
         }
-        
+
         $pdfprocessor = new \mod_paper\pdf_processor();
-        $pdf_binary = $pdfprocessor->generate_evaluations_pdf($paper, $evaluations, $context);
+        $pdf_binary = $pdfprocessor->generate_evaluations_pdf($paper, $evaluations, $context, $includesummary);
         
         send_file($pdf_binary, $filename, 0, 0, true, false, 'application/pdf');
         return;

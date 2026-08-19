@@ -45,23 +45,88 @@ class diff
  */
     public static function fetchWordArray($thetext)
     {
+        [$cleaned, $raw] = self::fetchWordArrayWithRaw($thetext);
+        return $cleaned;
+    }
 
-        // Tidy up the text so its just lower case words seperated by spaces.
-        $thetext = self::cleanText($thetext);
+    /*
+     * Split passage of text into an array of cleaned (comparison) words AND the
+     * raw (as-typed) words they came from, guaranteed to be the same length and
+     * positionally aligned - so callers that need to display the original text
+     * for a matched/unmatched position can index the raw array with the same
+     * index used against the cleaned array, even when punctuation tokens
+     * (eg a stray-spaced "," or ".") get dropped during cleaning.
+     *
+     * Returns [$cleanedwords, $rawwords].
+     */
+    public static function fetchWordArrayWithRaw($thetext)
+    {
+        // Normalise line endings to spaces, same as cleanText().
+        $thetext = preg_replace('/#\R+#/u', ' ', $thetext);
+        $thetext = preg_replace('/\r/u', ' ', $thetext);
+        $thetext = preg_replace('/\n/u', ' ', $thetext);
 
-        // Split on spaces into words.
-        $textbits = explode(' ', $thetext);
+        // Split on whitespace into raw tokens.
+        $rawbits = preg_split('/\s+/', trim($thetext));
 
-        // Remove any empty elements.
-        $textbits = array_filter($textbits, function ($value) {
-            return $value !== '';
-        });
+        $cleaned = [];
+        $raw = [];
+        foreach ($rawbits as $rawword) {
+            if ($rawword === '') {
+                continue;
+            }
+            $cleanword = self::cleanWord($rawword);
+            // Drop tokens that are pure punctuation (clean to empty), same as
+            // the old cleanText()+explode() pipeline did - but keep the two
+            // arrays in lockstep by only ever appending to both together.
+            if ($cleanword === '') {
+                continue;
+            }
+            $cleaned[] = $cleanword;
+            $raw[] = $rawword;
+        }
 
-        // Re index array because array_filter converts array to assoc.
-        // (ie could have gone from indexes 0,1,2,3,4,5 to 0,1,3,4,5).
-        $textbits = array_values($textbits);
+        return [$cleaned, $raw];
+    }
 
-        return $textbits;
+    /*
+     * Clean a single word/token of things that might prevent a match:
+     * i) lowercase it
+     * ii) remove html characters
+     * iii) remove punctuation
+     * iv) remove smart quotes
+     *
+     * This is the per-token equivalent of cleanText() (which operates on a
+     * whole passage), factored out so fetchWordArrayWithRaw() can keep raw and
+     * cleaned tokens aligned one-to-one.
+     */
+    public static function cleanWord($theword, $unicodemb4 = true)
+    {
+        // Lowercaseify.
+        $theword = \core_text::strtolower($theword);
+
+        // Remove any html.
+        $theword = strip_tags($theword);
+
+        // Remove punctuation. This is where we needed the unicode flag
+        // see https://stackoverflow.com/questions/5233734/how-to-strip-punctuation-in-php
+        if ($unicodemb4) {
+            $theword = preg_replace("/[[:punct:]]+/u", "", $theword);
+        } else {
+            $theword = preg_replace("/[[:punct:]]+/", "", $theword);
+        }
+
+        // Remove bad chars.
+        $b_open = "“";
+        $b_close = "”";
+        $b_sopen = '‘';
+        $b_sclose = '’';
+        $bads = array($b_open, $b_close, $b_sopen, $b_sclose);
+        foreach ($bads as $bad) {
+            $theword = str_replace($bad, '', $theword);
+        }
+
+        return $theword;
     }
 
     /*

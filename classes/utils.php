@@ -394,11 +394,8 @@ class utils {
             return '<del>' . htmlspecialchars(trim($original)) . '</del>';
         }
 
-        $originalwords = diff::fetchWordArray($original);
-        $correctedwords = diff::fetchWordArray($corrected);
-
-        $raworiginal = preg_split('/\s+/', trim($original));
-        $rawcorrected = preg_split('/\s+/', trim($corrected));
+        [$originalwords, $raworiginal] = diff::fetchWordArrayWithRaw($original);
+        [$correctedwords, $rawcorrected] = diff::fetchWordArrayWithRaw($corrected);
 
         // Returns [$sessionerrors, $sessionmatches, $insertioncount]
         $result = self::fetch_grammar_correction_diff($original, $corrected, 'l2r');

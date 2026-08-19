@@ -194,9 +194,11 @@ class pdf_processor {
      * @param object $paper The paper instance.
      * @param array $evaluations Array of evaluation DB objects
      * @param object $context Moodle context object
+     * @param bool $includesummary Prepend a summary page listing all students/grades
+     *                              (used for the "all combined" download, not single-student ones).
      * @return string Raw PDF binary string
      */
-    public function generate_evaluations_pdf($paper, $evaluations, $context) {
+    public function generate_evaluations_pdf($paper, $evaluations, $context, $includesummary = false) {
         global $CFG, $DB;
         require_once($CFG->libdir . '/pdflib.php');
         
@@ -215,18 +217,27 @@ class pdf_processor {
         $pdf = new \pdf('P', 'mm', 'A4');
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(false);
-        $pdf->SetAutoPageBreak(false);
-        
+
         // Load areas once
         $areas = $DB->get_records('paper_response_areas', ['paperid' => $paper->id]);
         $maxpossible = 0;
+        $hasgradeareas = false;
         foreach ($areas as $area) {
             if (!$area->isnamefield) {
                 $maxpossible += $area->maxgrade;
+                if (($area->gradingmode ?? 'none') !== 'none') {
+                    $hasgradeareas = true;
+                }
             }
         }
         $maxpossible = round($maxpossible, 2) + 0;
-        
+
+        if ($includesummary) {
+            $this->add_summary_page($pdf, $paper, $evaluations, $maxpossible, $hasgradeareas);
+        }
+
+        $pdf->SetAutoPageBreak(false);
+
         foreach ($evaluations as $eval) {
             $pdf->AddPage();
             $pdf->SetTextColor(0, 0, 0); // Reset color to black for each student page
@@ -353,5 +364,52 @@ class pdf_processor {
         }
         
         return $pdf->Output('evaluations.pdf', 'S');
+    }
+
+    /**
+     * Prepends a summary page listing every student and their total grade,
+     * mirroring the on-screen table on reports.php.
+     *
+     * @param \pdf $pdf The in-progress PDF document (no pages added yet).
+     * @param object $paper The paper instance.
+     * @param array $evaluations Array of evaluation DB objects, in table order.
+     * @param float $maxpossible Maximum possible total grade for this paper.
+     * @param bool $hasgradeareas Whether any response area is actually gradable.
+     */
+    protected function add_summary_page($pdf, $paper, $evaluations, $maxpossible, $hasgradeareas) {
+        $pdf->SetAutoPageBreak(true, 15);
+        $pdf->AddPage();
+        $pdf->SetTextColor(0, 0, 0);
+
+        $namefont = $paper->targetlanguagefont ?? 'freesans';
+
+        $pdf->SetFont('freesans', 'B', 16);
+        $pdf->MultiCell(0, 10, get_string('evaluationreportsfor', 'mod_paper', $paper->name), 0, 'L', false, 1);
+        $pdf->Ln(4);
+
+        $pdf->SetFont($namefont, '', 11);
+
+        $html = '<table cellpadding="4" border="1">';
+        $html .= '<tr style="background-color:#eeeeee;font-weight:bold;">';
+        $html .= '<th width="15%">' . htmlspecialchars(get_string('evaluationid', 'mod_paper')) . '</th>';
+        $html .= '<th width="' . ($hasgradeareas ? '55' : '85') . '%">' . htmlspecialchars(get_string('studentname', 'mod_paper')) . '</th>';
+        if ($hasgradeareas) {
+            $html .= '<th width="30%">' . htmlspecialchars(get_string('totalgrade', 'mod_paper')) . '</th>';
+        }
+        $html .= '</tr>';
+
+        foreach ($evaluations as $eval) {
+            $html .= '<tr>';
+            $html .= '<td>' . htmlspecialchars($eval->id) . '</td>';
+            $html .= '<td>' . htmlspecialchars($eval->studentnametext ?? '') . '</td>';
+            if ($hasgradeareas) {
+                $gradetext = $eval->totalgrade !== null ? (round($eval->totalgrade, 2) + 0) . ' / ' . $maxpossible : '';
+                $html .= '<td>' . htmlspecialchars($gradetext) . '</td>';
+            }
+            $html .= '</tr>';
+        }
+        $html .= '</table>';
+
+        $pdf->writeHTML($html, true, false, false, false, '');
     }
 }
