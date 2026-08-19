@@ -15,7 +15,7 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Strings for component 'paper'.
+ * Strings for component 'Poodll Paper'.
  *
  * @package    mod_paper
  * @copyright  2024 Justin Hunt <poodllsupport@gmail.com>
@@ -24,11 +24,11 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$string['modulename'] = 'Paper';
+$string['modulename'] = 'Poodll Paper';
 $string['modulename_help'] = 'A Moodle activity plugin that gives corrections, feedback and optionally a score on student’s written assignments or worksheets.';
-$string['modulenameplural'] = 'Papers';
-$string['pluginname'] = 'Paper';
-$string['pluginadministration'] = 'Paper administration';
+$string['modulenameplural'] = 'Poodll Papers';
+$string['pluginname'] = 'Poodll Paper';
+$string['pluginadministration'] = 'Poodll Paper administration';
 
 $string['enablemoodleusername'] = 'Enable Moodle username';
 $string['enablemoodleusername_help'] = 'If enabled you can specify one of the response areas as a Moodle username field. Then scores can be added to the gradebook and users can see their own results.';
