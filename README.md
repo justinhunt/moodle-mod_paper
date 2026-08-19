@@ -1,6 +1,6 @@
 # Paper Module (mod_paper)
 
-Paper is a Moodle activity module that allows the teacher to distribute paper assignments, which are later scanned, evaluated by AI, and the results printed to paper for return to students. It allows teachers to use AI to speed up manual grading and does not require students to use a computer or log in to Moodle.
+Poodll Paper is a Moodle activity module that allows the teacher to distribute paper assignments, which are later scanned, evaluated by AI, and the results printed to paper for return to students. It allows teachers to use AI to speed up manual grading and does not require students to use a computer or log in to Moodle.
 
 ## Features
 
@@ -24,13 +24,18 @@ Paper is a Moodle activity module that allows the teacher to distribute paper as
 
 - **Ghostscript**: Required for PDF to Image conversion during processing.
 - **Open AI API Key**: For OCR and evaluation.
-- **File Storage**: Uses Moodle's File API to store template snippets and evaluation reports.
+
+## A Video Walkthrough
+
+See a walkthrough of setting up a Poodll Paper activity here:
+
+[https://youtu.be/ivEStVh2Yrs](https://youtu.be/ivEStVh2Yrs)
 
 ## Installation
 
 1. Copy the `paper` directory to your Moodle's `/mod/` folder.
 2. Log in as an administrator and go to `Site Administration > Notifications` to complete the installation.
-3. Configure the necessary API keys in `Site Administration > Plugins > Activity modules > Paper`.
+3. Be sure to set your OpenAI API key in `Site Administration > Plugins > Activity modules > Poodll Paper`.
 
 ## Try it
 
@@ -38,6 +43,8 @@ There is a testworksheet.pdf and testworksheet_submissions.pdf in the samples fo
 
 NB At the moment the worksheet must be A4 size and portrait orientation.
 
+There is a test site at: [https://paper.poodll.com](https://paper.poodll.com).
+Contact Poodll to get access: [https://poodll.com/contact](https://poodll.com/contact).
 
 ## Permissions
 
@@ -47,6 +54,6 @@ NB At the moment the worksheet must be A4 size and portrait orientation.
 
 ## Developer Documentation
 
-For detailed architectural diagrams, database schema references, adhoc task lifecycles, and past development milestones, see [DEVELOPER.md](DEVELOPER.md).
+Dev details for you and for development agents are at: [DEVELOPER.md](DEVELOPER.md).
 
 
