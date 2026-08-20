@@ -99,9 +99,10 @@ if ($file) {
     foreach ($areas as $area) {
         $item = $itemsbyarea[$area->id] ?? null;
         $itemid = $item ? $item->id : 0;
-        $ocr = $item ? $item->ocrtext : '';
-        $corrected = $item ? $item->correctedtext : '';
-        $feedback = $item ? $item->feedback : '';
+        // correctedtext/feedback are NULL until the item has been evaluated.
+        $ocr = $item ? ($item->ocrtext ?? '') : '';
+        $corrected = $item ? ($item->correctedtext ?? '') : '';
+        $feedback = $item ? ($item->feedback ?? '') : '';
         $grade = $item ? $item->itemgrade : null;
 
         $bottom = $area->box_y + $area->box_h;

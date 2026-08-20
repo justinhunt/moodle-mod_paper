@@ -387,6 +387,11 @@ class utils {
      * Uses fetch_grammar_correction_diff to get match positions.
      */
     public static function build_combined_diff($original, $corrected, $ispdf = false) {
+        // ocrtext/correctedtext are nullable, and correctedtext is NULL for any item that
+        // hasn't been evaluated yet, so callers can legitimately hand us a NULL here.
+        $original = (string) ($original ?? '');
+        $corrected = (string) ($corrected ?? '');
+
         if (trim($original) === trim($corrected)) {
             return htmlspecialchars(trim($original));
         }

@@ -307,7 +307,7 @@ class pdf_processor {
                 $item = $itemsbyarea[$area->id] ?? null;
                 $ocr = $item ? trim($item->ocrtext ?? '') : '';
                 $corrected = $item ? trim($item->correctedtext ?? '') : '';
-                $feedback = $item ? $item->feedback : '';
+                $feedback = $item ? ($item->feedback ?? '') : '';
                 $grade = $item ? $item->itemgrade : null;
 
                 // Handle name field fallback

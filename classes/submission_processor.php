@@ -273,8 +273,9 @@ class submission_processor {
         $item->evalid = $evalid;
         $item->responseareaid = $area->id;
         $item->ocrtext = $ocrtext;
-        $item->correctedtext = '';
-        $item->feedback = '';
+        // NULL, not '', marks this as awaiting stage-2 grading - see evaluation_processor.
+        $item->correctedtext = null;
+        $item->feedback = null;
         $item->itemgrade = null;
 
         $itemid = $DB->insert_record('paper_eval_items', $item);

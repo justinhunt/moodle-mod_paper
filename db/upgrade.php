@@ -216,5 +216,31 @@ function xmldb_paper_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2024042708, 'paper');
     }
 
+    if ($oldversion < 2024042709) {
+        // Move "not yet evaluated" from an empty/space string onto a real NULL.
+        //
+        // Previously a new item stored correctedtext = '' to mean "pending" and a single
+        // space to mean "processed, but there was nothing to correct". MySQL/MariaDB's
+        // default PAD SPACE collations compare those two as equal, so every blank answer
+        // matched the pending query on every run, forever. NULL can't be confused with
+        // either, and both columns were already nullable.
+
+        // Items that never got a grade are the genuinely pending ones.
+        $DB->execute("UPDATE {paper_eval_items}
+                         SET correctedtext = NULL, feedback = NULL
+                       WHERE itemgrade IS NULL");
+
+        // Anything already graded is processed; normalise the old space sentinel so it
+        // doesn't print as a stray space in the review UI or the exported PDF. Items whose
+        // correction came back empty despite having a grade stay processed - re-running
+        // them is a teacher's call via Re-evaluate, not something to trigger on upgrade.
+        $DB->execute("UPDATE {paper_eval_items}
+                         SET correctedtext = ''
+                       WHERE itemgrade IS NOT NULL
+                         AND correctedtext = ' '");
+
+        upgrade_mod_savepoint(true, 2024042709, 'paper');
+    }
+
     return true;
 }

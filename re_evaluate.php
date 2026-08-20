@@ -35,9 +35,10 @@ require_login($course, true, $cm);
 require_capability('mod/paper:manage', context_module::instance($cm->id));
 require_sesskey();
 
-// Clear existing correctedtext, feedback and grade for all evaluations of this paper
+// Clear existing correctedtext, feedback and grade for all evaluations of this paper.
+// NULL (not '') is what marks an item as awaiting evaluation - see evaluation_processor.
 $sql = "UPDATE {paper_eval_items}
-        SET correctedtext = '', feedback = '', itemgrade = NULL
+        SET correctedtext = NULL, feedback = NULL, itemgrade = NULL
         WHERE evalid IN (
             SELECT id FROM {paper_evaluations} WHERE paperid = :paperid
         )";

@@ -31,6 +31,20 @@ defined('MOODLE_INTERNAL') || die();
  * totals. Used by evaluate_submissions_task, but plain enough to call synchronously from
  * anywhere else that needs to (re-)evaluate a paper - or a single response area, or a
  * single evaluation's total - without going through the adhoc task queue.
+ *
+ * Whether an item still needs processing is carried by paper_eval_items itself, in three
+ * distinct states:
+ *
+ *   correctedtext IS NULL  - never processed; waiting for this class to pick it up
+ *   correctedtext = ''     - processed, but there was nothing to correct (blank answer)
+ *   correctedtext = '...'  - processed, with content
+ *
+ * itemgrade follows the same shape (NULL until graded, a number afterwards), and either
+ * being NULL marks the item pending. Both are nullable columns, so "no value yet" is
+ * stored as an actual NULL rather than as a magic string: an earlier version used a
+ * single space to mean "processed, nothing to say", which MySQL/MariaDB's default
+ * PAD SPACE collations compare equal to '', so those items matched the pending query on
+ * every run forever.
  */
 class evaluation_processor {
 
@@ -121,6 +135,11 @@ class evaluation_processor {
      * Finds response items for this paper that still need grammar correction and/or
      * grading (excludes name fields, which are never graded).
      *
+     * "Not yet processed" is NULL on either field - see the class docblock for the three
+     * states correctedtext can be in. Testing for an empty string here instead would
+     * re-select every blank answer forever, because MySQL/MariaDB's default PAD SPACE
+     * collations treat '' and ' ' as equal.
+     *
      * @return array paper_eval_items records.
      */
     public function find_pending_items() {
@@ -132,7 +151,7 @@ class evaluation_processor {
                 JOIN {paper_response_areas} pra ON pra.id = pei.responseareaid
                 WHERE pe.paperid = :paperid
                   AND pra.isnamefield = 0
-                  AND (pei.correctedtext = '' OR pei.itemgrade IS NULL)";
+                  AND (pei.correctedtext IS NULL OR pei.itemgrade IS NULL)";
 
         return $DB->get_records_sql($sql, ['paperid' => $this->paper->id]);
     }
@@ -182,9 +201,10 @@ class evaluation_processor {
             if (!empty(trim($item->ocrtext))) {
                 $batchtexts[$item->id] = trim($item->ocrtext);
             } else {
-                // Mark as processed if empty.
+                // Nothing to correct, so mark it processed with a zero grade rather than
+                // spending a request on it. Empty string (not NULL) is what says "done".
                 $DB->set_field('paper_eval_items', 'itemgrade', 0, ['id' => $item->id]);
-                $DB->set_field('paper_eval_items', 'correctedtext', ' ', ['id' => $item->id]); // Use space to mark as 'processed'.
+                $DB->set_field('paper_eval_items', 'correctedtext', '', ['id' => $item->id]);
                 $affectedevalids[$item->evalid] = true;
             }
         }
@@ -205,7 +225,9 @@ class evaluation_processor {
         foreach ($results as $itemid => $result) {
             $update = new \stdClass();
             $update->id = (int)$itemid;
-            $update->correctedtext = $result['correctedtext'] ?? ' ';
+            // Never NULL here: the item has been processed, even if the model gave us
+            // nothing usable back, and NULL would put it straight back in the queue.
+            $update->correctedtext = $result['correctedtext'] ?? '';
             $update->itemgrade = $result['grade'] ?? 0;
             $update->feedback = $result['feedback'] ?? '';
             $DB->update_record('paper_eval_items', $update);
