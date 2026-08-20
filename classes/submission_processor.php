@@ -207,6 +207,11 @@ class submission_processor {
 
         if ($area->isnamefield == 3) {
             $this->save_response_snippet($croppedbase64, $itemid);
+        } else if (get_config('mod_paper', 'savedebugcrops')) {
+            // Display-only areas already persist their crop above; for every other area
+            // this is only saved when the admin has opted into the extra storage cost,
+            // for inspection on the Developer page.
+            $this->save_area_crop($croppedbase64, $itemid);
         }
 
         return $itemid;
@@ -242,6 +247,28 @@ class submission_processor {
             'snippetw' => 100,
             'snippeth' => 100,
         ]);
+    }
+
+    /**
+     * Saves a response-area crop for inspection on the Developer page. Gated behind the
+     * mod_paper/savedebugcrops setting (off by default) since it adds one extra stored
+     * image per response area per submission, purely for debugging.
+     *
+     * @param string $croppedbase64 Base64-encoded JPEG/PNG crop, as returned by
+     *                                pdf_processor::crop_image_to_base64().
+     * @param int $itemid The paper_eval_items row this crop belongs to.
+     */
+    public function save_area_crop($croppedbase64, $itemid) {
+        $fs = get_file_storage();
+        $filerecord = [
+            'contextid' => $this->context->id,
+            'component' => 'mod_paper',
+            'filearea' => 'areacrop',
+            'itemid' => $itemid,
+            'filepath' => '/',
+            'filename' => 'crop.jpg',
+        ];
+        $fs->create_file_from_string($filerecord, base64_decode($croppedbase64));
     }
 
     /**

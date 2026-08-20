@@ -177,10 +177,10 @@ function paper_pluginfile($course, $cm, $context, $filearea, array $args, $force
     // Default handling for other files (like template or snippets)
     $fs = get_file_storage();
     
-    if ($filearea === 'responsesnippet') {
+    if ($filearea === 'responsesnippet' || $filearea === 'areacrop') {
         $itemid = (int) array_shift($args);
         $filename = array_shift($args);
-        $file = $fs->get_file($context->id, 'mod_paper', 'responsesnippet', $itemid, '/', $filename);
+        $file = $fs->get_file($context->id, 'mod_paper', $filearea, $itemid, '/', $filename);
         if (!$file) {
             send_file_not_found();
         }

@@ -30,6 +30,11 @@ if ($ADMIN->fulltree) {
         get_string('ghostscriptpath_desc', 'mod_paper'),
         '/usr/bin/gs'));
 
+    $settings->add(new admin_setting_configcheckbox('mod_paper/savedebugcrops',
+        get_string('savedebugcrops', 'mod_paper'),
+        get_string('savedebugcrops_desc', 'mod_paper'),
+        0));
+
     $langoptions = \mod_paper\utils::get_lang_options();
 
     $settings->add(new admin_setting_configselect('mod_paper/defaulttargetlanguage',

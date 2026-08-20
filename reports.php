@@ -170,6 +170,11 @@ $templatecontext['actionbuttons'][] = [
     'disabled' => $nodata,
     'title' => $disabledtitle,
 ];
+$templatecontext['actionbuttons'][] = [
+    'url' => (new moodle_url('/mod/paper/developer.php', ['id' => $cm->id]))->out(false),
+    'text' => get_string('developer', 'mod_paper'),
+    'class' => 'btn btn-secondary',
+];
 
 echo $OUTPUT->render_from_template('mod_paper/reports_page', $templatecontext);
 
