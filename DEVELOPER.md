@@ -41,6 +41,18 @@ The submission workflow is split into two distinct background adhoc tasks:
 2. **Stage 2 (`evaluate_submissions_task.php`)**: Batches response texts to OpenAI for grammar corrections, custom qualitative feedback, and numerical scoring.
 *Benefit:* Teachers can adjust prompts or click **Re-evaluate** (`re_evaluate.php`) to re-run AI evaluation without needing to re-upload or re-OCR images.
 
+### Parallel AI Requests (`curl_multi`)
+
+OCR is the pipeline's bottleneck: a batch costs **pages × response areas** separate Vision requests, and each one must carry its own image crop, so they cannot be collapsed into a single prompt the way stage-2 grading is. Both stages therefore fan their requests out concurrently through `openai_handler::call_openai_multi()`.
+
+- **Runner**: a `curl_multi` loop with a queue capped at `mod_paper/openaiconcurrency` (default 16), waiting on `curl_multi_select()` rather than busy-looping. Handles map back to caller keys via `spl_object_id()` (PHP 8 returns `CurlHandle` objects, so they can't be cast to int). This is a local implementation rather than Moodle core's `\curl::multi()` — see below.
+- **`submission_processor::process_batch()` runs in three phases**: (1) `build_crop_jobs()` decodes each page **once** and writes every crop to a temp file; (2) `run_ocr_jobs()` sends them all concurrently, base64-encoding each crop lazily so peak memory tracks requests in flight, not batch size; (3) `save_ocr_jobs()` writes the rows in page → `responsenumber ASC` order. Phase 3 ordering is **required**: `apply_name_field()` writes to the shared `paper_evaluations` row, so multi-name-field last-wins is only deterministic if the writes are ordered even though the OCR was not. The `paper_evaluations` row is also created in phase 3, not up front, so `external_api::check_status()`'s progress count keeps climbing.
+- **`evaluation_processor::process_paper()`** collects all areas first, then grades them in one fan-out via `batch_process_evaluations_multi()`.
+
+**Failure handling is deliberately status-aware.** `mod_minilesson`'s equivalent (`aimanager::generate_images()`) infers failure purely from the response body, which is safe for image generation but *not* for OCR: an empty result could equally mean "the response box was blank" or "the request failed". So the runner inspects `curl_multi_info_read()` errno and HTTP status, retries only transient failures (connection errors, 429, 5xx) over two backoff rounds, treats an undecodable body as an error rather than empty text, and guarantees one result entry per input key. Callers get an explicit `error` per key and never conflate it with an empty answer — a failed OCR still writes its `paper_eval_items` row (with empty `ocrtext`) rather than dropping it, which would otherwise hide the area from the review page and silently shrink `totalgrade`.
+
+Related settings: `mod_paper/openaiconcurrency` and `mod_paper/openaitimeout` (per-request seconds, default 120; a connect timeout of 10s is fixed in code).
+
 ---
 
 ## 3. Database Schema

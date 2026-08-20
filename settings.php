@@ -113,6 +113,16 @@ if ($ADMIN->fulltree) {
         get_string('openaimaxtokensbatch_desc', 'mod_paper'),
         8000, PARAM_INT));
 
+    $settings->add(new admin_setting_configtext('mod_paper/openaiconcurrency',
+        get_string('openaiconcurrency', 'mod_paper'),
+        get_string('openaiconcurrency_desc', 'mod_paper'),
+        16, PARAM_INT));
+
+    $settings->add(new admin_setting_configtext('mod_paper/openaitimeout',
+        get_string('openaitimeout', 'mod_paper'),
+        get_string('openaitimeout_desc', 'mod_paper'),
+        120, PARAM_INT));
+
     $settings->add(new admin_setting_heading('mod_paper/gradingpresets_heading',
         get_string('gradingpresets', 'mod_paper'), ''));
 

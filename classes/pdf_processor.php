@@ -61,13 +61,18 @@ class pdf_processor {
     }
 
     /**
-     * Crops a specific physical region out of an image file based on percentage coordinates and returns a Base64 string.
+     * Decodes an image file into a GD handle.
+     *
+     * Split out from crop_image_to_base64() so a caller cropping several regions from the
+     * same page decodes it once instead of once per region - a worksheet with ten response
+     * areas was decoding the same full-size page JPEG ten times.
+     *
+     * The caller owns the returned handle and must imagedestroy() it.
      *
      * @param string $filepath Source image file path (JPG or PNG).
-     * @param object $box Database object containing box_x, box_y, box_w, box_h (0-100 values).
-     * @return string Base64 encoded payload of the extracted image region.
+     * @return array [GdImage $src, string $ext]
      */
-    public function crop_image_to_base64($filepath, $box) {
+    public function load_image($filepath) {
         $ext = strtolower(pathinfo($filepath, PATHINFO_EXTENSION));
         if ($ext === 'jpg' || $ext === 'jpeg') {
             $src = @imagecreatefromjpeg($filepath);
@@ -76,11 +81,41 @@ class pdf_processor {
         } else {
             throw new \moodle_exception("Unsupported image format: " . $ext);
         }
-        
+
         if (!$src) {
             throw new \moodle_exception("Failed to load image for cropping: " . $filepath);
         }
-        
+
+        return [$src, $ext];
+    }
+
+    /**
+     * Crops a specific physical region out of an image file based on percentage coordinates and returns a Base64 string.
+     *
+     * @param string $filepath Source image file path (JPG or PNG).
+     * @param object $box Database object containing box_x, box_y, box_w, box_h (0-100 values).
+     * @return string Base64 encoded payload of the extracted image region.
+     */
+    public function crop_image_to_base64($filepath, $box) {
+        list($src, $ext) = $this->load_image($filepath);
+
+        try {
+            return $this->crop_loaded_image($src, $box, $ext);
+        } finally {
+            imagedestroy($src);
+        }
+    }
+
+    /**
+     * Crops a region out of an already-decoded image, so several regions can be taken from
+     * one page without re-reading it. Does not destroy $src - the caller owns it.
+     *
+     * @param \GdImage $src Source image handle, from load_image().
+     * @param object $box Database object containing box_x, box_y, box_w, box_h (0-100 values).
+     * @param string $ext Source format ('jpg', 'jpeg' or 'png'), governing the output encoding.
+     * @return string Base64 encoded payload of the extracted image region.
+     */
+    public function crop_loaded_image($src, $box, $ext) {
         $width = imagesx($src);
         $height = imagesy($src);
         
@@ -107,8 +142,7 @@ class pdf_processor {
             imagejpeg($dest, null, 90);
         }
         $imagedata = ob_get_clean();
-        
-        imagedestroy($src);
+
         imagedestroy($dest);
 
         return base64_encode($imagedata);

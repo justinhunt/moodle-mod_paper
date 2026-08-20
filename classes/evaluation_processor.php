@@ -69,13 +69,41 @@ class evaluation_processor {
 
         global $DB;
         $affectedevals = [];
+
+        // Each area is one request covering all of its pending items. Collect them first so
+        // the areas can then be graded concurrently rather than one after another.
+        $areas = [];
+        $itemsbyarea = [];
         foreach ($groupeditems as $areaid => $areaitems) {
             $area = $DB->get_record('paper_response_areas', ['id' => $areaid]);
             if (!$area) {
                 continue;
             }
-            foreach ($this->evaluate_area($area, $areaitems) as $evalid) {
-                $affectedevals[$evalid] = true;
+            $areas[$areaid] = $area;
+
+            $batchtexts = $this->prepare_area_batch($areaitems, $affectedevals);
+            if (!empty($batchtexts)) {
+                $itemsbyarea[$areaid] = $batchtexts;
+            }
+            mtrace("Prepared Area #{$area->responsenumber} (ID: {$areaid}) with " . count($areaitems) . " items...");
+        }
+
+        if (!empty($itemsbyarea)) {
+            mtrace("Grading " . count($itemsbyarea) . " response areas...");
+            $batchresults = $this->aimanager->batch_process_evaluations_multi(
+                $areas,
+                $itemsbyarea,
+                $this->paper->feedbacklanguage
+            );
+
+            foreach ($batchresults as $areaid => $batchresult) {
+                if (!empty($batchresult['error'])) {
+                    mtrace("Failed to process Area #{$areas[$areaid]->responsenumber}: " . $batchresult['error']);
+                    continue;
+                }
+                mtrace("Area #{$areas[$areaid]->responsenumber} results received: "
+                    . count($batchresult['results']) . " items.");
+                $this->apply_area_results($groupeditems[$areaid], $batchresult['results'], $affectedevals);
             }
         }
 
@@ -119,11 +147,36 @@ class evaluation_processor {
      * @return array Ids of evaluations that had an item change, for total-grade recalculation.
      */
     public function evaluate_area($area, array $items) {
-        global $DB;
-
         mtrace("Processing Area #{$area->responsenumber} (ID: {$area->id}) with " . count($items) . " items...");
 
         $affectedevalids = [];
+        $batchtexts = $this->prepare_area_batch($items, $affectedevalids);
+
+        if (!empty($batchtexts)) {
+            try {
+                $results = $this->aimanager->batch_process_evaluations($area, $batchtexts, $this->paper->feedbacklanguage);
+                mtrace("Area #{$area->responsenumber} results received: " . count($results) . " items.");
+                $this->apply_area_results($items, $results, $affectedevalids);
+            } catch (\Exception $e) {
+                mtrace("Failed to process Area #{$area->responsenumber}: " . $e->getMessage());
+            }
+        }
+
+        return array_keys($affectedevalids);
+    }
+
+    /**
+     * Picks out the items that actually need grading, short-circuiting empty responses -
+     * there is nothing for the AI to say about a blank answer, so it is marked processed
+     * with a zero grade instead of costing a request.
+     *
+     * @param array $items Pending paper_eval_items records for one area.
+     * @param array $affectedevalids Set of evaluation ids that changed, added to in place.
+     * @return array [itemid => ocrtext] for the items worth sending.
+     */
+    protected function prepare_area_batch(array $items, array &$affectedevalids) {
+        global $DB;
+
         $batchtexts = [];
         foreach ($items as $item) {
             if (!empty(trim($item->ocrtext))) {
@@ -136,32 +189,35 @@ class evaluation_processor {
             }
         }
 
-        if (!empty($batchtexts)) {
-            try {
-                $results = $this->aimanager->batch_process_evaluations($area, $batchtexts, $this->paper->feedbacklanguage);
-                mtrace("Area #{$area->responsenumber} results received: " . count($results) . " items.");
-                foreach ($results as $itemid => $result) {
-                    $update = new \stdClass();
-                    $update->id = (int)$itemid;
-                    $update->correctedtext = $result['correctedtext'] ?? ' ';
-                    $update->itemgrade = $result['grade'] ?? 0;
-                    $update->feedback = $result['feedback'] ?? '';
-                    $DB->update_record('paper_eval_items', $update);
+        return $batchtexts;
+    }
 
-                    // Find the evalid for this item to update total grade later.
-                    foreach ($items as $ai) {
-                        if ($ai->id == $itemid) {
-                            $affectedevalids[$ai->evalid] = true;
-                            break;
-                        }
-                    }
+    /**
+     * Writes one area's grading results back onto its items.
+     *
+     * @param array $items The paper_eval_items records the results belong to.
+     * @param array $results [itemid => ['correctedtext' => ..., 'grade' => ..., 'feedback' => ...]].
+     * @param array $affectedevalids Set of evaluation ids that changed, added to in place.
+     */
+    protected function apply_area_results(array $items, array $results, array &$affectedevalids) {
+        global $DB;
+
+        foreach ($results as $itemid => $result) {
+            $update = new \stdClass();
+            $update->id = (int)$itemid;
+            $update->correctedtext = $result['correctedtext'] ?? ' ';
+            $update->itemgrade = $result['grade'] ?? 0;
+            $update->feedback = $result['feedback'] ?? '';
+            $DB->update_record('paper_eval_items', $update);
+
+            // Find the evalid for this item to update total grade later.
+            foreach ($items as $ai) {
+                if ($ai->id == $itemid) {
+                    $affectedevalids[$ai->evalid] = true;
+                    break;
                 }
-            } catch (\Exception $e) {
-                mtrace("Failed to process Area #{$area->responsenumber}: " . $e->getMessage());
             }
         }
-
-        return array_keys($affectedevalids);
     }
 
     /**

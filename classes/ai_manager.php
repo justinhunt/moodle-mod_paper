@@ -55,6 +55,18 @@ class ai_manager {
     }
 
     /**
+     * Extract handwritten text from many cropped areas at once, running the requests
+     * concurrently rather than one after another.
+     *
+     * @param array $crops [key => base64 string, or callable returning one].
+     * @param int|null $concurrency Max requests in flight; defaults to the admin setting.
+     * @return array [key => ['text' => string|null, 'error' => string|null]].
+     */
+    public function extract_text_multi(array $crops, $concurrency = null) {
+        return $this->handler->extract_text_multi($crops, $concurrency);
+    }
+
+    /**
      * Evaluate a student's answer vs the required criteria
      */
     public function evaluate_response($studenttext, $criteria, $targetlang, $feedbacklang) {
@@ -66,6 +78,20 @@ class ai_manager {
      */
     public function batch_process_evaluations($area, $items, $feedbacklanguage = 'English') {
         return $this->handler->batch_process_evaluations($area, $items, $feedbacklanguage);
+    }
+
+    /**
+     * Batch process evaluations for several response areas concurrently
+     *
+     * @param array $areas [areaid => paper_response_areas record].
+     * @param array $itemsbyarea [areaid => [itemid => ocrtext]].
+     * @param string $feedbacklanguage
+     * @param int|null $concurrency Max requests in flight; defaults to the admin setting.
+     * @return array [areaid => ['results' => array, 'error' => string|null]].
+     */
+    public function batch_process_evaluations_multi(array $areas, array $itemsbyarea,
+            $feedbacklanguage = 'English', $concurrency = null) {
+        return $this->handler->batch_process_evaluations_multi($areas, $itemsbyarea, $feedbacklanguage, $concurrency);
     }
 
     /**

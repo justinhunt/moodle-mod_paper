@@ -71,6 +71,13 @@ class submission_processor {
      * each page through every response area, cleans up the original upload, and queues
      * stage-2 grading.
      *
+     * OCR is the slowest thing this plugin does - a batch costs (pages x response areas)
+     * separate Vision requests, and each one has to carry its own image crop so they can't
+     * be collapsed into a single prompt the way stage-2 grading is. So rather than walking
+     * the pages one at a time, this runs in three phases: crop everything locally, fire all
+     * the OCR requests concurrently, then write the results away in order. On a class set
+     * that turns hundreds of serial round trips into a handful of concurrent rounds.
+     *
      * @param int $batchid The submissions filearea itemid for this upload batch.
      */
     public function process_batch($batchid) {
@@ -88,16 +95,200 @@ class submission_processor {
         $imagequeue = $this->extract_images_from_files($files, $tempdir);
         mtrace("Extracted " . count($imagequeue) . " images to process.");
 
-        foreach ($imagequeue as $index => $imagepath) {
-            mtrace("Processing image " . ($index + 1) . "/" . count($imagequeue) . "...");
-            $this->process_image($imagepath);
-        }
+        // Phase 1: crop every response area out of every page, on disk.
+        $jobs = $this->build_crop_jobs($imagequeue, $tempdir);
+        mtrace("Cropped " . count($jobs) . " response areas from " . count($imagequeue) . " pages.");
+
+        // Phase 2: OCR them all concurrently.
+        $ocrresults = $this->run_ocr_jobs($jobs);
+
+        // Phase 3: write the evaluations and items away, in page/response order.
+        $this->save_ocr_jobs($jobs, $ocrresults);
 
         mtrace("Cleaning up original files from Moodle File API...");
         $this->cleanup_batch_files($batchid);
         mtrace("OCR complete for batch {$batchid}!");
 
         $this->queue_evaluation_task($batchid);
+    }
+
+    /**
+     * Phase 1. Crops every response area out of every page, writing each crop to a temp
+     * file rather than holding it in memory - a full class set is easily hundreds of crops,
+     * and they only need to exist as strings while their request is on the wire.
+     *
+     * Each page is decoded once and all of its areas cropped from that one handle.
+     *
+     * No database writes happen here: the paper_evaluations row is created in phase 3 as
+     * results land, so the progress counter on the upload page (which counts those rows)
+     * keeps climbing instead of jumping to full and sitting there for the whole run.
+     *
+     * @param array $imagequeue Page image paths, in order.
+     * @param string $tempdir Writable temp directory for the crops.
+     * @return array Job descriptors, in page order then responsenumber order.
+     */
+    protected function build_crop_jobs(array $imagequeue, $tempdir) {
+        $jobs = [];
+
+        foreach ($imagequeue as $pageindex => $imagepath) {
+            try {
+                list($src, $ext) = $this->pdfprocessor->load_image($imagepath);
+            } catch (\Exception $e) {
+                mtrace("Skipping page " . basename($imagepath) . ": " . $e->getMessage());
+                continue;
+            }
+
+            try {
+                foreach ($this->areas as $area) {
+                    try {
+                        $croppath = $tempdir . '/crop_' . $pageindex . '_' . $area->id . '.' . $ext;
+                        file_put_contents($croppath, base64_decode($this->pdfprocessor->crop_loaded_image($src, $area, $ext)));
+
+                        $jobs[] = (object) [
+                            'pageindex' => $pageindex,
+                            'imagepath' => $imagepath,
+                            'area' => $area,
+                            'croppath' => $croppath,
+                        ];
+                    } catch (\Exception $e) {
+                        mtrace("Error cropping area {$area->responsenumber} on " . basename($imagepath) . ": "
+                            . $e->getMessage());
+                    }
+                }
+            } finally {
+                imagedestroy($src);
+            }
+        }
+
+        return $jobs;
+    }
+
+    /**
+     * Phase 2. Runs the OCR requests for every job concurrently.
+     *
+     * Display-only areas are skipped entirely - they show the crop itself rather than any
+     * transcribed text, and nothing downstream reads their ocrtext.
+     *
+     * @param array $jobs Job descriptors from build_crop_jobs().
+     * @return array [job index => ['text' => string|null, 'error' => string|null]].
+     */
+    protected function run_ocr_jobs(array $jobs) {
+        $crops = [];
+        foreach ($jobs as $i => $job) {
+            if ($job->area->isnamefield == 3) {
+                continue;
+            }
+            // Deferred so the crop is only read off disk when its request is actually sent.
+            $crops[$i] = function() use ($job) {
+                return base64_encode(file_get_contents($job->croppath));
+            };
+        }
+
+        if (empty($crops)) {
+            return [];
+        }
+
+        mtrace("Running OCR on " . count($crops) . " response areas...");
+
+        return $this->aimanager->extract_text_multi($crops);
+    }
+
+    /**
+     * Phase 3. Writes the OCR results away: one paper_evaluations row per page, and one
+     * paper_eval_items row per response area.
+     *
+     * Runs in job order (page, then responsenumber ASC) because apply_name_field() writes
+     * to the shared paper_evaluations row - with more than one name field on a worksheet
+     * the highest responsenumber wins, and that's only deterministic if the writes are
+     * ordered even though the OCR that fed them was not.
+     *
+     * @param array $jobs Job descriptors from build_crop_jobs().
+     * @param array $ocrresults Results from run_ocr_jobs(), keyed by job index.
+     * @return array [pageindex => evaluation id].
+     */
+    protected function save_ocr_jobs(array $jobs, array $ocrresults) {
+        global $DB;
+
+        $evalids = [];
+
+        foreach ($jobs as $i => $job) {
+            if (!isset($evalids[$job->pageindex])) {
+                $evalids[$job->pageindex] = $DB->insert_record('paper_evaluations', [
+                    'paperid' => $this->paper->id,
+                    'timecreated' => time(),
+                    'filename' => basename($job->imagepath),
+                    'userid' => null,
+                    'studentnametext' => null,
+                    'totalgrade' => null,
+                ]);
+            }
+            $evalid = $evalids[$job->pageindex];
+
+            // Display-only areas are never sent for OCR, so having no result is expected
+            // for them and only for them - anywhere else a missing result is a failure.
+            if ($job->area->isnamefield == 3) {
+                $result = ['text' => '', 'error' => null];
+            } else {
+                $result = $ocrresults[$i] ?? ['text' => null, 'error' => 'no response'];
+            }
+
+            if (!empty($result['error'])) {
+                // Record the item anyway. Dropping the row would hide the response area
+                // from the review page entirely and quietly shrink the total grade, which
+                // is far worse than an empty answer a teacher can see and fill in.
+                mtrace("OCR failed for area {$job->area->responsenumber} on " . basename($job->imagepath)
+                    . ": " . $result['error']);
+            }
+
+            try {
+                $this->save_area_result($job, $evalid, $result['text'] ?? '');
+            } catch (\Exception $e) {
+                mtrace("Error saving area {$job->area->responsenumber} on " . basename($job->imagepath) . ": "
+                    . $e->getMessage());
+            }
+        }
+
+        return $evalids;
+    }
+
+    /**
+     * Saves one response area's OCR result: the paper_eval_items row, the name-field
+     * write-back, and the crop image for display-only (and optionally debug) areas.
+     *
+     * @param object $job A job descriptor from build_crop_jobs().
+     * @param int $evalid The evaluation this item belongs to.
+     * @param string $ocrtext The transcribed text ('' for display-only areas and failures).
+     * @return int The new item id.
+     */
+    protected function save_area_result($job, $evalid, $ocrtext) {
+        global $DB;
+
+        $area = $job->area;
+
+        if (($area->isnamefield == 1 || $area->isnamefield == 2) && !empty($ocrtext)) {
+            $this->apply_name_field($area, $ocrtext, $evalid);
+        }
+
+        $item = new \stdClass();
+        $item->evalid = $evalid;
+        $item->responseareaid = $area->id;
+        $item->ocrtext = $ocrtext;
+        $item->correctedtext = '';
+        $item->feedback = '';
+        $item->itemgrade = null;
+
+        $itemid = $DB->insert_record('paper_eval_items', $item);
+
+        if ($area->isnamefield == 3) {
+            $this->save_response_snippet(base64_encode(file_get_contents($job->croppath)), $itemid);
+        } else if (get_config('mod_paper', 'savedebugcrops')) {
+            // Display-only areas already persist their crop above; for every other area
+            // this is only saved when the admin has opted into the extra storage cost,
+            // for inspection on the Developer page.
+            $this->save_area_crop(base64_encode(file_get_contents($job->croppath)), $itemid);
+        }
+
+        return $itemid;
     }
 
     /**
@@ -140,32 +331,23 @@ class submission_processor {
 
     /**
      * Processes a single page image against every response area on this paper, creating
-     * one paper_evaluations row and one paper_eval_items row per area.
+     * one paper_evaluations row and one paper_eval_items row per area. The page's areas
+     * are OCR'd concurrently, as in a full batch.
      *
      * @param string $imagepath Path to a single page image.
-     * @return int The new evaluation id.
+     * @return int|null The new evaluation id, or null if the page yielded no areas.
      */
     public function process_image($imagepath) {
-        global $DB;
+        $tempdir = make_request_directory();
 
-        $evalid = $DB->insert_record('paper_evaluations', [
-            'paperid' => $this->paper->id,
-            'timecreated' => time(),
-            'filename' => basename($imagepath),
-            'userid' => null,
-            'studentnametext' => null,
-            'totalgrade' => null,
-        ]);
-
-        foreach ($this->areas as $area) {
-            try {
-                $this->process_area($imagepath, $area, $evalid);
-            } catch (\Exception $e) {
-                mtrace("Error processing area {$area->responsenumber} on " . basename($imagepath) . ": " . $e->getMessage());
-            }
+        $jobs = $this->build_crop_jobs([$imagepath], $tempdir);
+        if (empty($jobs)) {
+            return null;
         }
 
-        return $evalid;
+        $evalids = $this->save_ocr_jobs($jobs, $this->run_ocr_jobs($jobs));
+
+        return reset($evalids) ?: null;
     }
 
     /**
@@ -180,9 +362,12 @@ class submission_processor {
      * @return int The new item id.
      */
     public function process_area($imagepath, $area, $evalid) {
-        global $DB;
+        $tempdir = make_request_directory();
+        $croppath = $tempdir . '/crop_single_' . $area->id;
 
         $croppedbase64 = $this->pdfprocessor->crop_image_to_base64($imagepath, $area);
+        file_put_contents($croppath, base64_decode($croppedbase64));
+
         if ($area->isnamefield == 3) {
             // Display-only areas show the response snippet image, not OCR'd text, and
             // nothing downstream reads ocrtext for them - skip the AI OCR call.
@@ -191,30 +376,14 @@ class submission_processor {
             $ocrtext = $this->aimanager->extract_text($croppedbase64, $area);
         }
 
-        if (($area->isnamefield == 1 || $area->isnamefield == 2) && !empty($ocrtext)) {
-            $this->apply_name_field($area, $ocrtext, $evalid);
-        }
+        $job = (object) [
+            'pageindex' => 0,
+            'imagepath' => $imagepath,
+            'area' => $area,
+            'croppath' => $croppath,
+        ];
 
-        $item = new \stdClass();
-        $item->evalid = $evalid;
-        $item->responseareaid = $area->id;
-        $item->ocrtext = $ocrtext;
-        $item->correctedtext = '';
-        $item->feedback = '';
-        $item->itemgrade = null;
-
-        $itemid = $DB->insert_record('paper_eval_items', $item);
-
-        if ($area->isnamefield == 3) {
-            $this->save_response_snippet($croppedbase64, $itemid);
-        } else if (get_config('mod_paper', 'savedebugcrops')) {
-            // Display-only areas already persist their crop above; for every other area
-            // this is only saved when the admin has opted into the extra storage cost,
-            // for inspection on the Developer page.
-            $this->save_area_crop($croppedbase64, $itemid);
-        }
-
-        return $itemid;
+        return $this->save_area_result($job, $evalid, $ocrtext);
     }
 
     /**

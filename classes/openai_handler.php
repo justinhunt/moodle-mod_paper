@@ -35,6 +35,19 @@ class openai_handler {
     protected $ocrreasoningeffort;
     protected $maxtokens;
     protected $maxtokensbatch;
+    protected $concurrency;
+    protected $timeout;
+
+    /** @var string The Responses API endpoint every call in this class targets. */
+    const API_URL = 'https://api.openai.com/v1/responses';
+
+    /** @var int Connect timeout, in seconds. Not admin-configurable - a TCP handshake to
+     * api.openai.com either happens quickly or is not going to happen at all. */
+    const CONNECT_TIMEOUT = 10;
+
+    /** @var array Backoff, in seconds, before each retry round in call_openai_multi(). The
+     * number of entries is also the number of retry rounds. */
+    const RETRY_BACKOFF = [2, 5];
 
     public function __construct() {
         $this->apikey = get_config('mod_paper', 'openaicredentials');
@@ -44,6 +57,8 @@ class openai_handler {
         $this->ocrreasoningeffort = get_config('mod_paper', 'openaiocrreasoningeffort') ?: 'none';
         $this->maxtokens = (int) (get_config('mod_paper', 'openaimaxtokens') ?: 2000);
         $this->maxtokensbatch = (int) (get_config('mod_paper', 'openaimaxtokensbatch') ?: 8000);
+        $this->concurrency = (int) (get_config('mod_paper', 'openaiconcurrency') ?: 16);
+        $this->timeout = (int) (get_config('mod_paper', 'openaitimeout') ?: 120);
     }
 
     /**
@@ -100,17 +115,13 @@ class openai_handler {
     }
 
     /**
-     * $messages uses the familiar chat-completions shape (role/content, with an optional
-     * leading system message) and is translated here into a Responses API (v1/responses)
-     * request: system -> top-level instructions, max_output_tokens, reasoning.effort.
+     * Translates $messages - which uses the familiar chat-completions shape (role/content,
+     * with an optional leading system message) - into a Responses API (v1/responses)
+     * request body: system -> top-level instructions, max_output_tokens, reasoning.effort.
+     *
+     * @return array The request body, ready to json_encode.
      */
-    protected function call_openai($messages, $maxtokens = null, $model = null, $reasoningeffort = null) {
-        if (empty($this->apikey)) {
-            throw new \moodle_exception('openaicredentialsnotset', 'mod_paper');
-        }
-
-        $url = 'https://api.openai.com/v1/responses';
-
+    protected function build_request_payload($messages, $maxtokens = null, $model = null, $reasoningeffort = null) {
         $maxtokens = $maxtokens ?? $this->maxtokens;
         $model = $model ?? $this->model;
 
@@ -143,16 +154,68 @@ class openai_handler {
             $data['temperature'] = 0.2;
         }
 
+        return $data;
+    }
+
+    /**
+     * Builds a ready-to-run curl handle for one request body. Shared by the single-request
+     * and parallel paths so they can't drift apart on headers or timeouts.
+     *
+     * @param array $payload A request body from build_request_payload().
+     * @return \CurlHandle
+     */
+    protected function make_curl_handle(array $payload) {
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_URL, self::API_URL);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         curl_setopt($ch, CURLOPT_POST, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         curl_setopt($ch, CURLOPT_HTTPHEADER, [
             'Content-Type: application/json',
             'Authorization: Bearer ' . $this->apikey,
         ]);
+        // Without these a hung request blocks the whole adhoc task indefinitely.
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, self::CONNECT_TIMEOUT);
+        curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
 
+        return $ch;
+    }
+
+    /**
+     * Turns a raw response body into the assistant's text.
+     *
+     * @param string $body The raw HTTP response body.
+     * @return string
+     * @throws \moodle_exception If the API reported an error.
+     */
+    protected function parse_response($body) {
+        $response = json_decode($body);
+
+        if (isset($response->error)) {
+            throw new \moodle_exception('OpenAI Error: ' . $response->error->message);
+        }
+
+        // An undecodable body has to be an error, not an empty answer. A proxy returning an
+        // HTML error page with a 200 would otherwise silently read as "this response area
+        // was blank" - indistinguishable from a student who genuinely left it empty.
+        if (!is_object($response)) {
+            throw new \moodle_exception('OpenAI Error: unreadable response: ' . s(shorten_text(trim($body), 200)));
+        }
+
+        return $this->extract_output_text($response);
+    }
+
+    /**
+     * Sends one request and returns the assistant's text.
+     */
+    protected function call_openai($messages, $maxtokens = null, $model = null, $reasoningeffort = null) {
+        if (empty($this->apikey)) {
+            throw new \moodle_exception('openaicredentialsnotset', 'mod_paper');
+        }
+
+        $payload = $this->build_request_payload($messages, $maxtokens, $model, $reasoningeffort);
+
+        $ch = $this->make_curl_handle($payload);
         $result = curl_exec($ch);
         if (curl_errno($ch)) {
             $error = curl_error($ch);
@@ -161,12 +224,206 @@ class openai_handler {
         }
         curl_close($ch);
 
-        $response = json_decode($result);
-        if (isset($response->error)) {
-            throw new \moodle_exception('OpenAI Error: ' . $response->error->message);
+        return $this->parse_response($result);
+    }
+
+    /**
+     * Sends many requests concurrently via curl_multi, keeping at most $concurrency in
+     * flight at a time and topping the queue up as each one lands.
+     *
+     * Unlike a single call_openai(), a failure here is reported rather than thrown: with a
+     * batch of hundreds of requests, one bad response should not discard the other results.
+     * Callers get an explicit 'error' per key and decide what to do with it.
+     *
+     * Distinguishing transport failure from an empty answer is the whole point of checking
+     * the HTTP status here. For OCR especially, a failed request and a genuinely blank
+     * response box both produce empty text - conflating them would silently record "the
+     * student wrote nothing" for every rate-limited request.
+     *
+     * @param array $payloads [key => request body from build_request_payload(), or a
+     *                        callable returning one]. Callables are resolved at the moment
+     *                        the request is actually sent, so a caller with large payloads
+     *                        (image crops) can keep peak memory proportional to the number
+     *                        in flight rather than to the size of the batch.
+     * @param int|null $concurrency Max requests in flight; defaults to the admin setting.
+     * @return array [key => ['text' => string|null, 'error' => string|null]], same keys as $payloads.
+     */
+    protected function call_openai_multi(array $payloads, $concurrency = null) {
+        if (empty($this->apikey)) {
+            throw new \moodle_exception('openaicredentialsnotset', 'mod_paper');
         }
 
-        return $this->extract_output_text($response);
+        $results = [];
+        if (empty($payloads)) {
+            return $results;
+        }
+
+        $pendingkeys = array_keys($payloads);
+
+        // Round 0 is the initial attempt; each subsequent round retries whatever failed in
+        // a way that looks transient (connection error, rate limit, server error).
+        foreach (array_merge([0], self::RETRY_BACKOFF) as $round => $backoff) {
+            if (empty($pendingkeys)) {
+                break;
+            }
+
+            if ($round > 0) {
+                mtrace("Retrying " . count($pendingkeys) . " failed request(s) in {$backoff}s...");
+                sleep($backoff);
+            }
+
+            $roundpayloads = [];
+            foreach ($pendingkeys as $key) {
+                $roundpayloads[$key] = $payloads[$key];
+            }
+
+            $pendingkeys = [];
+            foreach ($this->run_multi_round($roundpayloads, $concurrency) as $key => $result) {
+                $results[$key] = ['text' => $result['text'], 'error' => $result['error']];
+                if ($result['retryable']) {
+                    $pendingkeys[] = $key;
+                }
+            }
+        }
+
+        // Guarantee an entry per input key. If the multi handle ever bails out early a key
+        // could otherwise come back missing, and a caller reading that as an empty string
+        // would record a failed request as an empty answer.
+        foreach (array_keys($payloads) as $key) {
+            if (!isset($results[$key])) {
+                $results[$key] = ['text' => null, 'error' => 'no response'];
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Runs one round of concurrent requests to completion.
+     *
+     * @param array $payloads [key => request body].
+     * @param int|null $concurrency Max requests in flight.
+     * @return array [key => ['text' => ?string, 'error' => ?string, 'retryable' => bool]]
+     */
+    protected function run_multi_round(array $payloads, $concurrency = null) {
+        $concurrency = max(1, (int) ($concurrency ?? $this->concurrency));
+
+        $results = [];
+        $queue = array_keys($payloads);
+        $handles = [];
+
+        $mh = curl_multi_init();
+        // Let the requests share HTTP/2 connections to api.openai.com rather than opening
+        // one socket each.
+        @curl_multi_setopt($mh, CURLMOPT_PIPELINING, CURLPIPE_MULTIPLEX);
+
+        // Seed the first window of requests.
+        while (count($handles) < $concurrency && !empty($queue)) {
+            $this->add_multi_handle($mh, $handles, $payloads, $queue);
+        }
+
+        do {
+            $status = curl_multi_exec($mh, $running);
+
+            // Block until something actually happens instead of spinning a CPU core. A
+            // negative return means there is nothing to wait on, so fall through.
+            if ($running > 0 && curl_multi_select($mh, 1.0) === -1) {
+                usleep(10000);
+            }
+
+            while ($info = curl_multi_info_read($mh)) {
+                $ch = $info['handle'];
+                $id = spl_object_id($ch);
+                if (!isset($handles[$id])) {
+                    continue;
+                }
+                $key = $handles[$id];
+                unset($handles[$id]);
+
+                $results[$key] = $this->interpret_multi_result($ch, $info, $key);
+
+                curl_multi_remove_handle($mh, $ch);
+                curl_close($ch);
+
+                // Top the window back up as soon as a slot frees.
+                if (!empty($queue)) {
+                    $this->add_multi_handle($mh, $handles, $payloads, $queue);
+                    $running++;
+                }
+            }
+        } while ($running > 0 && $status === CURLM_OK);
+
+        curl_multi_close($mh);
+
+        return $results;
+    }
+
+    /**
+     * Pops the next key off $queue, creates its handle, adds it to the multi handle and
+     * records the handle -> key mapping.
+     *
+     * curl_init() returns a CurlHandle object on PHP 8, so handles are keyed by
+     * spl_object_id() rather than by casting to int.
+     *
+     * @param \CurlMultiHandle $mh
+     * @param array $handles [spl_object_id => key], modified in place.
+     * @param array $payloads [key => request body].
+     * @param array $queue Remaining keys, modified in place.
+     */
+    protected function add_multi_handle($mh, array &$handles, array $payloads, array &$queue) {
+        $key = array_shift($queue);
+
+        // Resolve lazily: the payload (and the base64 image inside it) exists only long
+        // enough to be encoded onto the handle, then goes out of scope.
+        $payload = $payloads[$key];
+        $ch = $this->make_curl_handle(is_callable($payload) ? $payload() : $payload);
+
+        $handles[spl_object_id($ch)] = $key;
+        curl_multi_add_handle($mh, $ch);
+    }
+
+    /**
+     * Classifies one finished request as success, retryable failure, or permanent failure.
+     *
+     * @param \CurlHandle $ch The finished handle.
+     * @param array $info The curl_multi_info_read() entry for it.
+     * @param string|int $key The caller's key, for the log line.
+     * @return array ['text' => ?string, 'error' => ?string, 'retryable' => bool]
+     */
+    protected function interpret_multi_result($ch, array $info, $key) {
+        if ($info['result'] !== CURLE_OK) {
+            $error = 'curl error: ' . curl_strerror($info['result']);
+            mtrace("Request {$key} failed ({$error})");
+            return ['text' => null, 'error' => $error, 'retryable' => true];
+        }
+
+        $body = curl_multi_getcontent($ch);
+        $httpcode = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+
+        // 429 (rate limited) and 5xx (server side) are worth another go; 4xx is not - a bad
+        // key or a malformed request will fail identically every time.
+        if ($httpcode === 429 || $httpcode >= 500) {
+            $error = "HTTP {$httpcode}";
+            mtrace("Request {$key} failed ({$error})");
+            return ['text' => null, 'error' => $error, 'retryable' => true];
+        }
+
+        if ($httpcode !== 200) {
+            $error = "HTTP {$httpcode}";
+            $decoded = json_decode($body);
+            if (isset($decoded->error->message)) {
+                $error .= ': ' . $decoded->error->message;
+            }
+            mtrace("Request {$key} failed ({$error})");
+            return ['text' => null, 'error' => $error, 'retryable' => false];
+        }
+
+        try {
+            return ['text' => $this->parse_response($body), 'error' => null, 'retryable' => false];
+        } catch (\Exception $e) {
+            mtrace("Request {$key} returned an unusable response: " . $e->getMessage());
+            return ['text' => null, 'error' => $e->getMessage(), 'retryable' => false];
+        }
     }
 
     public function identify_response_areas($imagebase64) {
@@ -197,7 +454,18 @@ class openai_handler {
         return json_decode($jsonstr);
     }
 
-    public function extract_text($imagebase64, $bbox) {
+    /**
+     * Builds the OCR messages for one cropped response area.
+     *
+     * Note: For a real implementation, we either need to crop the image *before* sending to save tokens,
+     * or ask the AI to only look at the specific bounding box coordinates. Since GPT-4V doesn't
+     * accept coordinate-based cropping natively, cropping in PHP (using GD/Imagick) before calling this
+     * is the standard approach. So $imagebase64 is the ALREADY CROPPED image.
+     *
+     * @param string $imagebase64 Base64-encoded crop.
+     * @return array Chat-shaped messages.
+     */
+    protected function build_ocr_messages($imagebase64) {
         $prompt = "You are an OCR transcription engine, not a proofreader or editor. Extract the handwritten or "
             . "typed text from the image EXACTLY as it appears, character for character.\n"
             . "Do NOT correct spelling, grammar, punctuation, or capitalization, even if it looks like an obvious "
@@ -205,12 +473,7 @@ class openai_handler {
             . "Example: if the image shows \"I has a aple\", output exactly \"I has a aple\", NOT \"I have an apple\".\n"
             . "Only output the text you see, nothing else. If it's empty, output NOTHING.";
 
-        // Note: For a real implementation, we either need to crop the image *before* sending to save tokens,
-        // or ask the AI to only look at the specific bounding box coordinates. Since GPT-4V doesn't
-        // accept coordinate-based cropping natively, cropping in PHP (using GD/Imagick) before calling this
-        // is the standard approach. For now we assume $imagebase64 is the ALREADY CROPPED image.
-
-        $messages = [
+        return [
             [
                 'role' => 'user',
                 'content' => [
@@ -219,17 +482,79 @@ class openai_handler {
                 ],
             ],
         ];
+    }
 
-        // OCR/perception uses its own admin-configured model and reasoning effort,
-        // independent of the grading model/effort - preserving errors verbatim is the
-        // whole point of this plugin, and different models vary a lot on that.
-        $text = trim($this->call_openai($messages, null, $this->ocrmodel, $this->ocrreasoningeffort));
+    /**
+     * Applies the "blank box" sentinel to a raw OCR result.
+     *
+     * @param string $text Raw model output.
+     * @return string The transcribed text, or '' for an empty response area.
+     */
+    protected function clean_ocr_text($text) {
+        $text = trim($text);
 
         if (strcasecmp($text, 'NOTHING') === 0) {
             return '';
         }
 
         return $text;
+    }
+
+    public function extract_text($imagebase64, $bbox) {
+        $messages = $this->build_ocr_messages($imagebase64);
+
+        // OCR/perception uses its own admin-configured model and reasoning effort,
+        // independent of the grading model/effort - preserving errors verbatim is the
+        // whole point of this plugin, and different models vary a lot on that.
+        return $this->clean_ocr_text($this->call_openai($messages, null, $this->ocrmodel, $this->ocrreasoningeffort));
+    }
+
+    /**
+     * OCRs many cropped response areas concurrently.
+     *
+     * Each crop is an independent request (the image has to travel with it, so unlike
+     * grading these can't be collapsed into one prompt), which makes this the single
+     * biggest win from running them in parallel: a batch costs pages x response areas
+     * requests, and serially that is the slowest thing the plugin does.
+     *
+     * Crops are supplied as callables rather than strings so the caller can hold them on
+     * disk and only base64-encode the one being sent, keeping peak memory proportional to
+     * the number of requests in flight rather than to the size of the batch.
+     *
+     * @param array $crops [key => base64 string, or callable returning one].
+     * @param int|null $concurrency Max requests in flight; defaults to the admin setting.
+     * @return array [key => ['text' => string|null, 'error' => string|null]]. On failure
+     *               'text' is null and 'error' is set - never conflate the two, an empty
+     *               string is a legitimately blank response area.
+     */
+    public function extract_text_multi(array $crops, $concurrency = null) {
+        if (empty($crops)) {
+            return [];
+        }
+
+        $payloads = [];
+        foreach ($crops as $key => $crop) {
+            // Deferred: the crop is only read/encoded when this request reaches the front
+            // of the queue, and is released again as soon as it is on the wire.
+            $payloads[$key] = function() use ($crop) {
+                return $this->build_request_payload(
+                    $this->build_ocr_messages(is_callable($crop) ? $crop() : $crop),
+                    null,
+                    $this->ocrmodel,
+                    $this->ocrreasoningeffort
+                );
+            };
+        }
+
+        $results = [];
+        foreach ($this->call_openai_multi($payloads, $concurrency) as $key => $result) {
+            $results[$key] = [
+                'text' => $result['text'] === null ? null : $this->clean_ocr_text($result['text']),
+                'error' => $result['error'],
+            ];
+        }
+
+        return $results;
     }
 
     public function evaluate_response($studenttext, $criteria, $targetlang, $feedbacklang) {
@@ -263,11 +588,15 @@ class openai_handler {
 
         return json_decode($jsonstr);
     }
-    public function batch_process_evaluations($area, $items, $feedbacklanguage = 'English') {
-        if (empty($items)) {
-            return [];
-        }
-
+    /**
+     * Builds the grading messages for one response area and its pending items.
+     *
+     * @param object $area A paper_response_areas record.
+     * @param array $items [itemid => ocrtext].
+     * @param string $feedbacklanguage
+     * @return array Chat-shaped messages.
+     */
+    protected function build_evaluation_messages($area, $items, $feedbacklanguage = 'English') {
         $prompt = "You are an expert teacher grading student responses for a specific response area on a worksheet.\n";
         $prompt .= "### Area Configuration\n";
         $prompt .= "- Question/Topic: " . ($area->question ?: 'Not provided') . "\n";
@@ -332,7 +661,7 @@ class openai_handler {
         $prompt .= "- 'grade': number (0 to " . $area->maxgrade . ")\n";
         $prompt .= "- 'feedback': string (in " . $feedbacklanguage . ")\n";
 
-        $messages = [
+        return [
             [
                 'role' => 'system',
                 'content' => 'You are a precise grading assistant. Return only valid JSON.',
@@ -342,13 +671,64 @@ class openai_handler {
                 'content' => $prompt,
             ],
         ];
+    }
 
-        $jsonstr = $this->call_openai($messages, $this->maxtokensbatch);
-
+    /**
+     * Strips markdown fences the model sometimes wraps JSON in, and decodes it.
+     *
+     * @param string $jsonstr Raw model output.
+     * @return array Decoded results, or [] if unparseable.
+     */
+    protected function decode_json_results($jsonstr) {
         $jsonstr = preg_replace('/```json\s*/', '', $jsonstr);
         $jsonstr = preg_replace('/```\s*/', '', $jsonstr);
 
         return json_decode($jsonstr, true) ?: [];
+    }
+
+    public function batch_process_evaluations($area, $items, $feedbacklanguage = 'English') {
+        if (empty($items)) {
+            return [];
+        }
+
+        $messages = $this->build_evaluation_messages($area, $items, $feedbacklanguage);
+
+        return $this->decode_json_results($this->call_openai($messages, $this->maxtokensbatch));
+    }
+
+    /**
+     * Grades several response areas concurrently - one request per area, as
+     * batch_process_evaluations() does, but with all the areas in flight at once.
+     *
+     * @param array $areas [areaid => paper_response_areas record].
+     * @param array $itemsbyarea [areaid => [itemid => ocrtext]].
+     * @param string $feedbacklanguage
+     * @param int|null $concurrency Max requests in flight; defaults to the admin setting.
+     * @return array [areaid => ['results' => array, 'error' => string|null]].
+     */
+    public function batch_process_evaluations_multi(array $areas, array $itemsbyarea,
+            $feedbacklanguage = 'English', $concurrency = null) {
+
+        $payloads = [];
+        foreach ($areas as $areaid => $area) {
+            if (empty($itemsbyarea[$areaid])) {
+                continue;
+            }
+            $payloads[$areaid] = $this->build_request_payload(
+                $this->build_evaluation_messages($area, $itemsbyarea[$areaid], $feedbacklanguage),
+                $this->maxtokensbatch
+            );
+        }
+
+        $out = [];
+        foreach ($this->call_openai_multi($payloads, $concurrency) as $areaid => $result) {
+            $out[$areaid] = [
+                'results' => $result['text'] === null ? [] : $this->decode_json_results($result['text']),
+                'error' => $result['error'],
+            ];
+        }
+
+        return $out;
     }
 
     public function batch_correct_grammar($texts) {
