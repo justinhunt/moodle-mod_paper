@@ -52,6 +52,9 @@ class submission_processor {
     /** @var pdf_processor */
     protected $pdfprocessor;
 
+    /** @var array Padded crop geometry per response area id, from utils::pad_box(). */
+    protected $paddedboxes;
+
     /**
      * @param object $paper The paper instance record.
      */
@@ -64,6 +67,29 @@ class submission_processor {
         $this->areas = $DB->get_records('paper_response_areas', ['paperid' => $paper->id], 'responsenumber ASC');
         $this->aimanager = new \mod_paper\ai_manager();
         $this->pdfprocessor = new \mod_paper\pdf_processor();
+
+        // Display-only crops are taken a little wider than the box so the scan's
+        // misregistration can be corrected later without re-processing - see utils::pad_box().
+        $padmm = (float) get_config('mod_paper', 'croppadmm');
+        $this->paddedboxes = [];
+        foreach ($this->areas as $area) {
+            $this->paddedboxes[$area->id] = \mod_paper\utils::pad_box($area, $padmm);
+        }
+    }
+
+    /**
+     * Returns the padded crop geometry for a response area, computing it on demand for
+     * areas that didn't come from this paper's own set (process_area() accepts any area).
+     *
+     * @param object $area A paper_response_areas record.
+     * @return array As returned by utils::pad_box().
+     */
+    protected function get_padded_box($area) {
+        if (!isset($this->paddedboxes[$area->id])) {
+            $padmm = (float) get_config('mod_paper', 'croppadmm');
+            $this->paddedboxes[$area->id] = \mod_paper\utils::pad_box($area, $padmm);
+        }
+        return $this->paddedboxes[$area->id];
     }
 
     /**
@@ -94,6 +120,12 @@ class submission_processor {
         $tempdir = make_request_directory();
         $imagequeue = $this->extract_images_from_files($files, $tempdir);
         mtrace("Extracted " . count($imagequeue) . " images to process.");
+
+        // Keep one page from this batch so the scan alignment can be measured against the
+        // template later - everything else here is deleted once OCR is done.
+        if (!empty($imagequeue)) {
+            $this->save_alignment_page(reset($imagequeue));
+        }
 
         // Phase 1: crop every response area out of every page, on disk.
         $jobs = $this->build_crop_jobs($imagequeue, $tempdir);
@@ -141,14 +173,24 @@ class submission_processor {
             try {
                 foreach ($this->areas as $area) {
                     try {
+                        // Only display-only areas are cropped wide. Padding an area that is
+                        // going to be OCR'd hands the model whatever is printed just outside
+                        // the box - on a tightly drawn name field that means the surrounding
+                        // parentheses come back as part of the student's name, which then
+                        // fails to match a username.
+                        $pad = ($area->isnamefield == 3) ? $this->get_padded_box($area) : null;
+                        $cropbox = $pad ? $pad['box'] : $area;
+
                         $croppath = $tempdir . '/crop_' . $pageindex . '_' . $area->id . '.' . $ext;
-                        file_put_contents($croppath, base64_decode($this->pdfprocessor->crop_loaded_image($src, $area, $ext)));
+                        file_put_contents($croppath,
+                            base64_decode($this->pdfprocessor->crop_loaded_image($src, $cropbox, $ext)));
 
                         $jobs[] = (object) [
                             'pageindex' => $pageindex,
                             'imagepath' => $imagepath,
                             'area' => $area,
                             'croppath' => $croppath,
+                            'pad' => $pad,
                         ];
                     } catch (\Exception $e) {
                         mtrace("Error cropping area {$area->responsenumber} on " . basename($imagepath) . ": "
@@ -281,11 +323,13 @@ class submission_processor {
         $itemid = $DB->insert_record('paper_eval_items', $item);
 
         if ($area->isnamefield == 3) {
-            $this->save_response_snippet(base64_encode(file_get_contents($job->croppath)), $itemid);
-        } else if (get_config('mod_paper', 'savedebugcrops')) {
-            // Display-only areas already persist their crop above; for every other area
-            // this is only saved when the admin has opted into the extra storage cost,
-            // for inspection on the Developer page.
+            $this->save_response_snippet(base64_encode(file_get_contents($job->croppath)), $itemid, $job->pad ?? null);
+        }
+
+        if (get_config('mod_paper', 'savedebugcrops')) {
+            // Kept for every area, display-only included: the snippet copy above is served
+            // windowed down to the response area, and the Developer page exists to show
+            // what was actually cropped.
             $this->save_area_crop(base64_encode(file_get_contents($job->croppath)), $itemid);
         }
 
@@ -366,7 +410,9 @@ class submission_processor {
         $tempdir = make_request_directory();
         $croppath = $tempdir . '/crop_single_' . $area->id;
 
-        $croppedbase64 = $this->pdfprocessor->crop_image_to_base64($imagepath, $area);
+        // Padded only for display-only areas - see build_crop_jobs().
+        $pad = ($area->isnamefield == 3) ? $this->get_padded_box($area) : null;
+        $croppedbase64 = $this->pdfprocessor->crop_image_to_base64($imagepath, $pad ? $pad['box'] : $area);
         file_put_contents($croppath, base64_decode($croppedbase64));
 
         if ($area->isnamefield == 3) {
@@ -382,21 +428,27 @@ class submission_processor {
             'imagepath' => $imagepath,
             'area' => $area,
             'croppath' => $croppath,
+            'pad' => $pad,
         ];
 
         return $this->save_area_result($job, $evalid, $ocrtext);
     }
 
     /**
-     * Saves the response-area crop as a display-only item's snippet image, verbatim
-     * (no ink-trimming/re-anchoring - the crop already lines up with the box it came
-     * from, so it's drawn back at exactly that position/size).
+     * Saves the response-area crop as a display-only item's snippet image, verbatim (no
+     * ink-trimming or re-anchoring), recording where the stored patch sits relative to the
+     * response area so it can be windowed back down to the area at render time.
+     *
+     * The patch is normally a little larger than the area (see utils::pad_box()), which is
+     * what lets the scan alignment be adjusted afterwards without re-cropping.
      *
      * @param string $croppedbase64 Base64-encoded JPEG/PNG crop, as returned by
      *                                pdf_processor::crop_image_to_base64().
      * @param int $itemid The paper_eval_items row this snippet belongs to.
+     * @param array|null $pad Padding geometry from utils::pad_box(); null records an
+     *                        unpadded patch occupying exactly the response area.
      */
-    public function save_response_snippet($croppedbase64, $itemid) {
+    public function save_response_snippet($croppedbase64, $itemid, $pad = null) {
         global $DB;
 
         $fs = get_file_storage();
@@ -412,10 +464,10 @@ class submission_processor {
 
         $DB->update_record('paper_eval_items', (object)[
             'id' => $itemid,
-            'snippetx' => 0,
-            'snippety' => 0,
-            'snippetw' => 100,
-            'snippeth' => 100,
+            'snippetx' => $pad['snippetx'] ?? 0,
+            'snippety' => $pad['snippety'] ?? 0,
+            'snippetw' => $pad['snippetw'] ?? 100,
+            'snippeth' => $pad['snippeth'] ?? 100,
         ]);
     }
 
@@ -439,6 +491,35 @@ class submission_processor {
             'filename' => 'crop.jpg',
         ];
         $fs->create_file_from_string($filerecord, base64_decode($croppedbase64));
+    }
+
+    /**
+     * Keeps one scanned page from a batch as the reference for measuring scan alignment.
+     *
+     * Alignment is the displacement between the worksheet as printed and as scanned back,
+     * which can only be measured by comparing a whole scanned page against the template.
+     * Per-area crops aren't enough: a response area is mostly blank paper with a horizontal
+     * rule, which pins the vertical displacement well but leaves the horizontal one
+     * ambiguous. A full page has margins, headers and text blocks to lock onto in both
+     * directions.
+     *
+     * Only the most recent batch's page is kept - one image per activity, replaced each
+     * time, rather than one per batch.
+     *
+     * @param string $imagepath Path to a page image from this batch.
+     */
+    public function save_alignment_page($imagepath) {
+        $fs = get_file_storage();
+        $fs->delete_area_files($this->context->id, 'mod_paper', 'alignmentpage', 0);
+
+        $fs->create_file_from_pathname([
+            'contextid' => $this->context->id,
+            'component' => 'mod_paper',
+            'filearea' => 'alignmentpage',
+            'itemid' => 0,
+            'filepath' => '/',
+            'filename' => 'page.jpg',
+        ], $imagepath);
     }
 
     /**

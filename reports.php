@@ -171,6 +171,11 @@ $templatecontext['actionbuttons'][] = [
     'title' => $disabledtitle,
 ];
 $templatecontext['actionbuttons'][] = [
+    'url' => (new moodle_url('/mod/paper/alignment.php', ['id' => $cm->id]))->out(false),
+    'text' => get_string('scanalignment', 'mod_paper'),
+    'class' => 'btn btn-secondary',
+];
+$templatecontext['actionbuttons'][] = [
     'url' => (new moodle_url('/mod/paper/developer.php', ['id' => $cm->id]))->out(false),
     'text' => get_string('developer', 'mod_paper'),
     'class' => 'btn btn-secondary',

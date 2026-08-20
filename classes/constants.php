@@ -29,6 +29,12 @@ defined('MOODLE_INTERNAL') || die();
 class constants {
     const M_COMPONENT = 'mod_paper';
 
+    // Page geometry. Worksheets are burst to A4 by Ghostscript (-sPAPERSIZE=a4) and the
+    // evaluation PDF is built as A4, so box percentages and millimetres are interchangeable
+    // via these two numbers.
+    const M_PAGE_W_MM = 210;
+    const M_PAGE_H_MM = 297;
+
     // Languages
     const M_LANG_ENUS = 'en-US';
     const M_LANG_ENGB = 'en-GB';

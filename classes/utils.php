@@ -530,4 +530,210 @@ class utils {
         }
         return ['x' => $fbx, 'y' => $fby, 'w' => $fbw, 'h' => $fbh];
     }
+
+    /**
+     * Returns the scan alignment correction in force for a paper.
+     *
+     * Printing a worksheet and scanning it back rarely reproduces the original geometry
+     * exactly - the content typically lands a couple of millimetres off, and can be very
+     * slightly stretched. These four numbers describe that displacement so the crop taken
+     * for a display-only area can be shifted back onto the content it was meant to capture.
+     *
+     * Offsets are percentages of the page (positive = the scanned content sits further
+     * right/down than the template says); scales are percentages where 100 means no
+     * stretch. A paper leaves any of the four NULL to inherit the site default.
+     *
+     * @param object $paper DB row from paper.
+     * @return array Associative array with keys offsetx, offsety, scalex, scaley.
+     */
+    public static function get_scan_alignment(object $paper): array {
+        $defaults = [
+            'offsetx' => (float) get_config('mod_paper', 'alignoffsetx'),
+            'offsety' => (float) get_config('mod_paper', 'alignoffsety'),
+            'scalex' => (float) get_config('mod_paper', 'alignscalex'),
+            'scaley' => (float) get_config('mod_paper', 'alignscaley'),
+        ];
+
+        $alignment = [];
+        foreach ($defaults as $key => $default) {
+            $value = $paper->{'align' . $key} ?? null;
+            $alignment[$key] = ($value === null || $value === '') ? $default : (float) $value;
+        }
+
+        // A zero scale would collapse the window to nothing - treat it as "unset".
+        foreach (['scalex', 'scaley'] as $key) {
+            if ($alignment[$key] <= 0) {
+                $alignment[$key] = 100.0;
+            }
+        }
+
+        return $alignment;
+    }
+
+    /**
+     * Grows a response area's bounding box by a margin on all sides, for cropping.
+     *
+     * The crop is taken before anyone knows how far the scan drifted, and the original
+     * scan is deleted once OCR finishes, so a crop taken at exactly the box coordinates
+     * bakes in whatever misregistration happened: content that should have been captured
+     * is simply missing, and correcting the position later cannot bring it back. Cropping
+     * a little wider than the box costs some storage but keeps that content available, so
+     * the alignment can be adjusted afterwards by windowing into the padded patch (see
+     * window_snippet()) instead of re-uploading and re-OCRing the whole batch.
+     *
+     * This is for display-only areas, whose stored image is transplanted back onto the
+     * template. Areas that get OCR'd are deliberately cropped at the box instead: a wider
+     * crop feeds the model whatever is printed just outside the area, and it transcribes
+     * that too.
+     *
+     * The padded box is clamped to the page, so the returned fractions describe where the
+     * patch that will actually be cropped sits - not where an unclamped one would have.
+     *
+     * @param object $area DB row from paper_response_areas.
+     * @param float $padmm Margin to add on every side, in millimetres. 0 disables padding.
+     * @return array{box: \stdClass, snippetx: float, snippety: float, snippetw: float, snippeth: float}
+     *               'box' carries box_x/box_y/box_w/box_h for the padded crop; the four
+     *               fractions give the patch's position and size as percentages of the
+     *               original box ([0, 0, 100, 100] when nothing was added).
+     */
+    public static function pad_box(object $area, float $padmm): array {
+        $bx = (float) $area->box_x;
+        $by = (float) $area->box_y;
+        $bw = (float) $area->box_w;
+        $bh = (float) $area->box_h;
+
+        $identity = static function() use ($area, $bx, $by, $bw, $bh) {
+            $box = new \stdClass();
+            $box->box_x = $bx;
+            $box->box_y = $by;
+            $box->box_w = $bw;
+            $box->box_h = $bh;
+            return ['box' => $box, 'snippetx' => 0.0, 'snippety' => 0.0,
+                    'snippetw' => 100.0, 'snippeth' => 100.0];
+        };
+
+        // A zero-sized box has no frame of reference to express the padding against.
+        if ($padmm <= 0 || $bw <= 0 || $bh <= 0) {
+            return $identity();
+        }
+
+        $padw = ($padmm / constants::M_PAGE_W_MM) * 100.0;
+        $padh = ($padmm / constants::M_PAGE_H_MM) * 100.0;
+
+        $left = max(0.0, $bx - $padw);
+        $top = max(0.0, $by - $padh);
+        $right = min(100.0, $bx + $bw + $padw);
+        $bottom = min(100.0, $by + $bh + $padh);
+
+        $box = new \stdClass();
+        $box->box_x = $left;
+        $box->box_y = $top;
+        $box->box_w = $right - $left;
+        $box->box_h = $bottom - $top;
+
+        return [
+            'box' => $box,
+            'snippetx' => (($left - $bx) / $bw) * 100.0,
+            'snippety' => (($top - $by) / $bh) * 100.0,
+            'snippetw' => ($box->box_w / $bw) * 100.0,
+            'snippeth' => ($box->box_h / $bh) * 100.0,
+        ];
+    }
+
+    /**
+     * Cuts the box-sized region out of a padded crop, shifted by the scan alignment.
+     *
+     * The stored patch is wider than the response area (see pad_box()); this picks the
+     * part of it that corresponds to the area itself, moved by however far the scan
+     * drifted. The result is always exactly the region the caller should draw at the
+     * area's own coordinates, so both the web preview and the PDF can render it without
+     * knowing anything about padding.
+     *
+     * Where the requested window runs off the edge of the patch - a drift larger than the
+     * margin that was cropped, or a legacy unpadded snippet - the missing strip comes back
+     * white rather than being clipped, so the content that does exist still lands in the
+     * right place.
+     *
+     * @param string $imagedata Raw JPEG binary of the stored patch.
+     * @param object $item DB row from paper_eval_items, carrying snippetx/y/w/h.
+     * @param object $area DB row from paper_response_areas.
+     * @param array $alignment Alignment from get_scan_alignment().
+     * @return string Raw JPEG binary of the windowed region, or $imagedata unchanged if it
+     *                could not be decoded or the item has no recorded patch position.
+     */
+    public static function window_snippet($imagedata, object $item, object $area, array $alignment) {
+        if ($item->snippetx === null || $item->snippety === null
+                || $item->snippetw === null || $item->snippeth === null) {
+            return $imagedata;
+        }
+
+        $bw = (float) $area->box_w;
+        $bh = (float) $area->box_h;
+        $patchw = ((float) $item->snippetw / 100.0) * $bw;
+        $patchh = ((float) $item->snippeth / 100.0) * $bh;
+        if ($bw <= 0 || $bh <= 0 || $patchw <= 0 || $patchh <= 0) {
+            return $imagedata;
+        }
+
+        $src = @imagecreatefromstring($imagedata);
+        if (!$src) {
+            return $imagedata;
+        }
+
+        try {
+            $srcw = imagesx($src);
+            $srch = imagesy($src);
+
+            // Where the stored patch sits on the page, as percentages.
+            $patchx = (float) $area->box_x + ((float) $item->snippetx / 100.0) * $bw;
+            $patchy = (float) $area->box_y + ((float) $item->snippety / 100.0) * $bh;
+
+            // Where we want to read from instead, once the scan's drift is accounted for.
+            $winx = $alignment['offsetx'] + ($alignment['scalex'] / 100.0) * (float) $area->box_x;
+            $winy = $alignment['offsety'] + ($alignment['scaley'] / 100.0) * (float) $area->box_y;
+            $winw = ($alignment['scalex'] / 100.0) * $bw;
+            $winh = ($alignment['scaley'] / 100.0) * $bh;
+
+            // The patch is the only thing that maps percentages to pixels here, and the
+            // window is expressed in the same units, so this stays a 1:1 copy - any
+            // rescaling happens when the caller draws the result into the area's box.
+            $pxper = $srcw / $patchw;
+            $pyper = $srch / $patchh;
+
+            $outw = max(1, (int) round($winw * $pxper));
+            $outh = max(1, (int) round($winh * $pyper));
+
+            $dest = imagecreatetruecolor($outw, $outh);
+            $white = imagecolorallocate($dest, 255, 255, 255);
+            imagefilledrectangle($dest, 0, 0, $outw, $outh, $white);
+
+            // Offset of the window's top-left within the patch, in patch pixels.
+            $srcx = ($winx - $patchx) * $pxper;
+            $srcy = ($winy - $patchy) * $pyper;
+
+            $copyleft = max(0.0, $srcx);
+            $copytop = max(0.0, $srcy);
+            $copyright = min((float) $srcw, $srcx + $outw);
+            $copybottom = min((float) $srch, $srcy + $outh);
+
+            if ($copyright > $copyleft && $copybottom > $copytop) {
+                imagecopy(
+                    $dest, $src,
+                    (int) round($copyleft - $srcx), (int) round($copytop - $srcy),
+                    (int) round($copyleft), (int) round($copytop),
+                    (int) round($copyright - $copyleft), (int) round($copybottom - $copytop)
+                );
+            }
+
+            ob_start();
+            imagejpeg($dest, null, 90);
+            $out = ob_get_clean();
+
+            imagedestroy($dest);
+
+            return $out;
+        } finally {
+            imagedestroy($src);
+        }
+    }
 }

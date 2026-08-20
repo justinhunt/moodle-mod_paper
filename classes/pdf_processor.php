@@ -258,9 +258,13 @@ class pdf_processor {
         $imagecontent = '@' . $file->get_content();
         
         // A4 page size in mm
-        $page_w = 210;
-        $page_h = 297;
-        
+        $page_w = \mod_paper\constants::M_PAGE_W_MM;
+        $page_h = \mod_paper\constants::M_PAGE_H_MM;
+
+        // How far the scanned pages sat from where the template says they should - applied
+        // when cutting display-only snippets back out of their padded crops.
+        $alignment = \mod_paper\utils::get_scan_alignment($paper);
+
         $pdf = new \pdf('P', 'mm', 'A4');
         $pdf->setPrintHeader(false);
         $pdf->setPrintFooter(false);
@@ -335,15 +339,14 @@ class pdf_processor {
                         if ($snippetfile) {
                             if ($item->snippetx !== null && $item->snippety !== null
                                     && $item->snippetw !== null && $item->snippeth !== null) {
-                                // Snippets are trimmed to their ink bounding box at save time (see
-                                // process_submissions_task), which also records where that trimmed
-                                // patch sat within the box - draw it back at its true position/size
-                                // instead of guessing an anchor.
-                                $sx_mm = $x_mm + ($item->snippetx / 100) * $w_mm;
-                                $sy_mm = $y_mm + ($item->snippety / 100) * $h_mm;
-                                $sw_mm = ($item->snippetw / 100) * $w_mm;
-                                $sh_mm = ($item->snippeth / 100) * $h_mm;
-                                $pdf->Image('@' . $snippetfile->get_content(), $sx_mm, $sy_mm, $sw_mm, $sh_mm, 'JPG', '', '', false, 300, '', false, false, 0, false);
+                                // The stored patch is cropped wider than the response area, so cut
+                                // the area's own region out of it - shifted by however far the scan
+                                // drifted - and draw that at the area's coordinates. Doing the
+                                // correction here rather than at crop time means the alignment can
+                                // be retuned without re-processing the submission.
+                                $snippetdata = \mod_paper\utils::window_snippet(
+                                    $snippetfile->get_content(), $item, $area, $alignment);
+                                $pdf->Image('@' . $snippetdata, $x_mm, $y_mm, $w_mm, $h_mm, 'JPG', '', '', false, 300, '', false, false, 0, false);
                             } else {
                                 // Legacy row from before snippet position was recorded - fall back
                                 // to the old fit-and-anchor-to-bottom-center approximation.

@@ -144,20 +144,17 @@ if ($file) {
             $snippeturl = moodle_url::make_pluginfile_url($context->id, 'mod_paper', 'responsesnippet', $itemid, '/', 'snippet.jpg');
             if ($item !== null && $item->snippetx !== null && $item->snippety !== null
                     && $item->snippetw !== null && $item->snippeth !== null) {
-                // Position/size were recorded at OCR time (see process_submissions_task) as
-                // percentages of the area's own box - draw the snippet at its true position,
-                // as a sibling of the box (like the feedback area below) rather than inline
-                // inside it, so it isn't subject to the box's own flex anchoring.
+                // pluginfile serves this already cut down to the response area and shifted
+                // by the scan alignment (see utils::window_snippet()), so it just fills the
+                // box. It goes in as a sibling of the box rather than inline inside it, like
+                // the feedback area below, so it isn't subject to the box's flex anchoring.
                 $snippethtml = html_writer::empty_tag('img', [
                     'src' => $snippeturl,
                     'style' => 'display: block; width: 100%; height: 100%;',
                 ]);
                 $snippetstyle = sprintf(
                     'position: absolute; left: %s%%; top: %s%%; width: %s%%; height: %s%%; z-index: 15;',
-                    $area->box_x + ($item->snippetx / 100) * $area->box_w,
-                    $area->box_y + ($item->snippety / 100) * $area->box_h,
-                    ($item->snippetw / 100) * $area->box_w,
-                    ($item->snippeth / 100) * $area->box_h
+                    $area->box_x, $area->box_y, $area->box_w, $area->box_h
                 );
                 $displayhtml = '';
             } else {

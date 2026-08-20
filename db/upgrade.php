@@ -242,5 +242,30 @@ function xmldb_paper_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2024042709, 'paper');
     }
 
+    if ($oldversion < 2024042710) {
+        // Per-activity scan alignment. NULL means "inherit the site default", so existing
+        // papers keep whatever the site is configured for rather than being pinned to the
+        // value that happened to be in force at upgrade time.
+        $table = new xmldb_table('paper');
+        $fields = [
+            'alignoffsetx' => new xmldb_field('alignoffsetx', XMLDB_TYPE_NUMBER, '10, 4', null, null, null, null,
+                'showtotalscore'),
+            'alignoffsety' => new xmldb_field('alignoffsety', XMLDB_TYPE_NUMBER, '10, 4', null, null, null, null,
+                'alignoffsetx'),
+            'alignscalex' => new xmldb_field('alignscalex', XMLDB_TYPE_NUMBER, '10, 4', null, null, null, null,
+                'alignoffsety'),
+            'alignscaley' => new xmldb_field('alignscaley', XMLDB_TYPE_NUMBER, '10, 4', null, null, null, null,
+                'alignscalex'),
+        ];
+
+        foreach ($fields as $name => $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        upgrade_mod_savepoint(true, 2024042710, 'paper');
+    }
+
     return true;
 }

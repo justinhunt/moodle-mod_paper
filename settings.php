@@ -35,6 +35,35 @@ if ($ADMIN->fulltree) {
         get_string('savedebugcrops_desc', 'mod_paper'),
         0));
 
+    $settings->add(new admin_setting_heading('mod_paper/scanalignment_heading',
+        get_string('scanalignment_heading', 'mod_paper'),
+        get_string('scanalignment_heading_desc', 'mod_paper')));
+
+    $settings->add(new admin_setting_configtext('mod_paper/croppadmm',
+        get_string('croppadmm', 'mod_paper'),
+        get_string('croppadmm_desc', 'mod_paper'),
+        5, PARAM_FLOAT));
+
+    $settings->add(new admin_setting_configtext('mod_paper/alignoffsetx',
+        get_string('alignoffsetx', 'mod_paper'),
+        get_string('alignoffsetx_desc', 'mod_paper'),
+        0, PARAM_FLOAT));
+
+    $settings->add(new admin_setting_configtext('mod_paper/alignoffsety',
+        get_string('alignoffsety', 'mod_paper'),
+        get_string('alignoffsety_desc', 'mod_paper'),
+        0, PARAM_FLOAT));
+
+    $settings->add(new admin_setting_configtext('mod_paper/alignscalex',
+        get_string('alignscalex', 'mod_paper'),
+        get_string('alignscalex_desc', 'mod_paper'),
+        100, PARAM_FLOAT));
+
+    $settings->add(new admin_setting_configtext('mod_paper/alignscaley',
+        get_string('alignscaley', 'mod_paper'),
+        get_string('alignscaley_desc', 'mod_paper'),
+        100, PARAM_FLOAT));
+
     $langoptions = \mod_paper\utils::get_lang_options();
 
     $settings->add(new admin_setting_configselect('mod_paper/defaulttargetlanguage',

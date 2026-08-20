@@ -20,6 +20,10 @@
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="showtotalscore" TYPE="int" LENGTH="2" NOTNULL="true" UNSIGNED="true" DEFAULT="1" SEQUENCE="false" COMMENT="Whether to show the total score at the bottom of evaluations"/>
+        <FIELD NAME="alignoffsetx" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="4" SEQUENCE="false" COMMENT="Scan alignment horizontal offset, percent of page width. NULL inherits the site default"/>
+        <FIELD NAME="alignoffsety" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="4" SEQUENCE="false" COMMENT="Scan alignment vertical offset, percent of page height. NULL inherits the site default"/>
+        <FIELD NAME="alignscalex" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="4" SEQUENCE="false" COMMENT="Scan alignment horizontal scale, percent. NULL inherits the site default"/>
+        <FIELD NAME="alignscaley" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="4" SEQUENCE="false" COMMENT="Scan alignment vertical scale, percent. NULL inherits the site default"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

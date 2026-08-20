@@ -89,13 +89,21 @@ if ($evalid > 0) {
         $imageurl = null;
 
         if ($item) {
-            $filearea = ($area->isnamefield == 3) ? 'responsesnippet' : 'areacrop';
-            $filename = ($area->isnamefield == 3) ? 'snippet.jpg' : 'crop.jpg';
-            $file = $fs->get_file($context->id, 'mod_paper', $filearea, $item->id, '/', $filename);
-            if ($file) {
-                $imageurl = moodle_url::make_pluginfile_url(
-                    $context->id, 'mod_paper', $filearea, $item->id, '/', $filename
-                )->out(false);
+            // Prefer the debug crop: it is served exactly as it was cropped, whereas a
+            // display-only area's snippet is served windowed down to the response area.
+            // Older submissions predate the debug crop, so fall back to the snippet.
+            $candidates = [['areacrop', 'crop.jpg']];
+            if ($area->isnamefield == 3) {
+                $candidates[] = ['responsesnippet', 'snippet.jpg'];
+            }
+
+            foreach ($candidates as list($filearea, $filename)) {
+                if ($fs->get_file($context->id, 'mod_paper', $filearea, $item->id, '/', $filename)) {
+                    $imageurl = moodle_url::make_pluginfile_url(
+                        $context->id, 'mod_paper', $filearea, $item->id, '/', $filename
+                    )->out(false);
+                    break;
+                }
             }
         }
 

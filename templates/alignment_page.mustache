@@ -1,0 +1,90 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+<div class="mod_paper_alignment_page">
+    <p class="text-muted">
+        {{#str}}scanalignmenthelp, mod_paper{{/str}}
+    </p>
+    <div class="alert alert-info">
+        {{#str}}scanalignmentpadnote, mod_paper, {{croppadmm}}{{/str}}
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">{{#str}}alignmentdetect, mod_paper{{/str}}</h5>
+            <p class="card-text text-muted small">{{#str}}alignmentdetecthelp, mod_paper{{/str}}</p>
+            {{#candetect}}
+                <a href="{{detecturl}}" class="btn btn-primary">{{#str}}alignmentdetectbutton, mod_paper{{/str}}</a>
+            {{/candetect}}
+            {{^candetect}}
+                <div class="alert alert-info mb-0">{{#str}}alignmentdetectunavailable, mod_paper{{/str}}</div>
+            {{/candetect}}
+
+            {{#detection}}
+                <table class="table table-sm mt-3 mb-0">
+                    <thead>
+                        <tr>
+                            <th>{{#str}}alignmentaxis, mod_paper{{/str}}</th>
+                            <th>{{#str}}alignmentmeasuredoffset, mod_paper{{/str}}</th>
+                            <th>{{#str}}alignmentmeasuredscale, mod_paper{{/str}}</th>
+                            <th>{{#str}}alignmentbands, mod_paper{{/str}}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <th scope="row">{{#str}}alignmenthorizontal, mod_paper{{/str}}</th>
+                            <td>{{offsetx}}</td>
+                            <td>{{scalex}}</td>
+                            <td>
+                                <span class="text-muted">{{bandsx}}</span>
+                                {{^reliablex}}
+                                    <span class="badge badge-warning ml-1">{{#str}}alignmentunreliable, mod_paper{{/str}}</span>
+                                {{/reliablex}}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row">{{#str}}alignmentvertical, mod_paper{{/str}}</th>
+                            <td>{{offsety}}</td>
+                            <td>{{scaley}}</td>
+                            <td>
+                                <span class="text-muted">{{bandsy}}</span>
+                                {{^reliabley}}
+                                    <span class="badge badge-warning ml-1">{{#str}}alignmentunreliable, mod_paper{{/str}}</span>
+                                {{/reliabley}}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                {{#anyunreliable}}
+                    <div class="alert alert-warning mt-2 mb-0">
+                        {{#str}}alignmentunreliablehelp, mod_paper{{/str}}
+                    </div>
+                {{/anyunreliable}}
+            {{/detection}}
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            {{{formhtml}}}
+        </div>
+    </div>
+
+    <div class="mt-2 mb-3">
+        <a href="{{reseturl}}" class="btn btn-secondary">{{#str}}alignmentresetbutton, mod_paper{{/str}}</a>
+        <a href="{{returntoreportsurl}}" class="btn btn-secondary">{{#str}}returntoreports, mod_paper{{/str}}</a>
+    </div>
+</div>

@@ -177,7 +177,41 @@ function paper_pluginfile($course, $cm, $context, $filearea, array $args, $force
     // Default handling for other files (like template or snippets)
     $fs = get_file_storage();
     
-    if ($filearea === 'responsesnippet' || $filearea === 'areacrop') {
+    if ($filearea === 'responsesnippet') {
+        require_login($course, false, $cm);
+        require_capability('mod/paper:manage', $context);
+
+        $itemid = (int) array_shift($args);
+        $filename = array_shift($args);
+        $file = $fs->get_file($context->id, 'mod_paper', $filearea, $itemid, '/', $filename);
+        if (!$file) {
+            send_file_not_found();
+        }
+
+        // The stored patch is cropped wider than the response area so the scan alignment
+        // stays adjustable after processing - cut the area's own region back out of it
+        // before serving, so callers can draw the result at the area's coordinates.
+        $item = $DB->get_record('paper_eval_items', ['id' => $itemid]);
+        $area = $item ? $DB->get_record('paper_response_areas', ['id' => $item->responseareaid]) : false;
+
+        if (!$item || !$area) {
+            send_stored_file($file, 0, 0, true);
+            return;
+        }
+
+        $paper = $DB->get_record('paper', ['id' => $cm->instance], '*', MUST_EXIST);
+        $alignment = \mod_paper\utils::get_scan_alignment($paper);
+        $windowed = \mod_paper\utils::window_snippet($file->get_content(), $item, $area, $alignment);
+
+        send_file($windowed, $filename, 0, 0, true, false, 'image/jpeg');
+        return;
+    }
+
+    if ($filearea === 'areacrop') {
+        require_login($course, false, $cm);
+        require_capability('mod/paper:manage', $context);
+
+        // Served untouched: the Developer page exists to show what was actually cropped.
         $itemid = (int) array_shift($args);
         $filename = array_shift($args);
         $file = $fs->get_file($context->id, 'mod_paper', $filearea, $itemid, '/', $filename);
