@@ -36,12 +36,6 @@ defined('MOODLE_INTERNAL') || die();
  */
 class utils {
 
-    public static function do_markup($originaltext, $correctedtext) {
-        $markeduporiginal = self::render_passage($originaltext, 'passage');
-        $markedupcorrected = self::render_passage($correctedtext, 'corrections');
-        return [$markeduporiginal, $markedupcorrected];
-    }
-
     public static function fetch_grammar_correction_diff($originaltext, $correction, $direction = 'l2r') {
 
         // turn the passage and transcript into an array of words
@@ -126,120 +120,6 @@ class utils {
         $sessionmatches = json_encode($matches);
 
         return [$sessionerrors, $sessionmatches, $insertioncount];
-    }
-
-    /**
-     * Render a passage of text into span-wrapped words for further processing
-     *
-     * @param string The passage of text to convert
-     * @param string The markup type (passage|corrections)
-     * @return string The converted passage of text
-     */
-    public static function render_passage($passage, $markuptype = 'passage') {
-        // Load the HTML document.
-        $doc = new \DOMDocument();
-
-        // Clean up weird encoding before loading into domdocument
-        $safepassage = htmlspecialchars($passage, ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, 'UTF-8');
-        @$doc->loadHTML(mb_encode_numericentity($safepassage, [0x80, 0x10FFFF, 0, ~0], 'UTF-8'));
-
-        // Select all the text nodes.
-        $xpath = new \DOMXPath($doc);
-        $nodes = $xpath->query('//text()');
-
-        // Base CSS class.
-        // We will add _mu_passage_word and _mu_passage_space. Can be customized though.
-        $cssword = 'mod_paper_mu_' . $markuptype . '_word';
-        $cssspace = 'mod_paper_mu_' . $markuptype . '_space';
-
-        // Original CSS classes
-        // The original classes are to show the original passage word before or after the corrections word
-        // because of the layout, "rewritten/added words" [corrections] will show in green, after the original words [red]
-        // but "removed(omitted) words" [corrections] will show as a green space  after the original words [red]
-        // so the span layout for each word in the corrections is:
-        // [original_preword][correctionsword][original_postword][correctionsspace]
-        // e.g rewritten/added word: (original)He eat apples => (corrected)He eats apples =>
-        // [original_preword: "eat->"][correctionsword: "eats"][original_postword][correctionsspace]
-        // e.g removed/omitted word: (original)He eat devours the apples=> (corrected)He devours the apples =>
-        // [original_preword: ][correctionsword: "He"][original_postword: "eat->" ][correctionsspace: " "].
-
-        $cssoriginalpreword = 'mod_paper_mu_original_preword';
-        $cssoriginalpostword = 'mod_paper_mu_original_postword';
-
-        // Init the text count.
-        $wordcount = 0;
-        foreach ($nodes as $node) {
-            $trimmednode = self::super_trim($node->nodeValue);
-            if (empty($trimmednode)) {
-                continue;
-            }
-
-            // Explode missed new lines that had been copied and pasted. eg A[newline]B was not split and was one word.
-            // This resulted in ai selected error words, having different index to their passage text counterpart.
-            $seperator = ' ';
-
-            $nodevalue = self::lines_to_brs($node->nodeValue, $seperator);
-            $words = preg_split('/\s+/', $nodevalue);
-
-            foreach ($words as $word) {
-                // If its a new line character from lines_to_brs we add it, but not as a word.
-                if ($word == '<br>') {
-                    $newnode = $doc->createElement('br', $word);
-                    $node->parentNode->appendChild($newnode);
-                    continue;
-                }
-
-                $wordcount++;
-                $newnode = $doc->createElement('span', $word);
-                $spacenode = $doc->createElement('span', $seperator);
-                $newnode->setAttribute('id', $cssword . '_' . $wordcount);
-                $newnode->setAttribute('data-wordnumber', $wordcount);
-                $newnode->setAttribute('class', $cssword);
-                $spacenode->setAttribute('id', $cssspace . '_' . $wordcount);
-                $spacenode->setAttribute('data-wordnumber', $wordcount);
-                $spacenode->setAttribute('class', $cssspace);
-                // Original pre node.
-                if ($markuptype !== 'passage') {
-                    $originalprenode = $doc->createElement('span', '');
-                    $originalprenode->setAttribute('id', $cssoriginalpreword . '_' . $wordcount);
-                    $originalprenode->setAttribute('data-wordnumber', $wordcount);
-                    $originalprenode->setAttribute('class', $cssoriginalpreword);
-                }
-                // Original post node.
-                if ($markuptype !== 'passage') {
-                    $originalpostnode = $doc->createElement('span', '');
-                    $originalpostnode->setAttribute('id', $cssoriginalpostword . '_' . $wordcount);
-                    $originalpostnode->setAttribute('data-wordnumber', $wordcount);
-                    $originalpostnode->setAttribute('class', $cssoriginalpostword);
-                }
-                // Add nodes to doc.
-                if ($markuptype == 'passage') {
-                    $node->parentNode->appendChild($newnode);
-                    $node->parentNode->appendChild($spacenode);
-                } else {
-                    $node->parentNode->appendChild($originalprenode);
-                    $node->parentNode->appendChild($newnode);
-                    $node->parentNode->appendChild($originalpostnode);
-                    $node->parentNode->appendChild($spacenode);
-                }
-            }
-            $node->nodeValue = "";
-        }
-
-        $usepassage = $doc->saveHTML();
-        // Remove container 'p' tags, they mess up formatting in solo.
-        $usepassage = str_replace('<p>', '', $usepassage);
-        $usepassage = str_replace('</p>', '', $usepassage);
-
-        if ($markuptype == 'passage') {
-            $ret = \html_writer::div(
-                $usepassage,
-                'mod_paper_original mod_paper_summarytranscriptplaceholder'
-            );
-        } else {
-            $ret = \html_writer::div($usepassage, 'mod_paper_corrections ');
-        }
-        return $ret;
     }
 
     /**
@@ -445,7 +325,7 @@ class utils {
                     }
                     if (!empty($deleted) && !empty($inserted)) {
                         $html .= ' <span style="font-family: freesans, sans-serif;">&rarr;</span> ';
-                    } elseif (empty($deleted) && !empty($inserted)) {
+                    } else if (empty($deleted) && !empty($inserted)) {
                         // pure insertion
                         $html .= ''; // just add the inserted text
                     }
