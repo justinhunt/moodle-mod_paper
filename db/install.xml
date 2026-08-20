@@ -88,6 +88,10 @@
         <FIELD NAME="correctedtext" TYPE="text" LENGTH="big" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="feedback" TYPE="text" LENGTH="big" NOTNULL="false" SEQUENCE="false"/>
         <FIELD NAME="itemgrade" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="2" SEQUENCE="false"/>
+        <FIELD NAME="snippetx" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="2" SEQUENCE="false" COMMENT="Left offset (%) of the trimmed ink snippet within its response area's box"/>
+        <FIELD NAME="snippety" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="2" SEQUENCE="false" COMMENT="Top offset (%) of the trimmed ink snippet within its response area's box"/>
+        <FIELD NAME="snippetw" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="2" SEQUENCE="false" COMMENT="Width (%) of the trimmed ink snippet within its response area's box"/>
+        <FIELD NAME="snippeth" TYPE="number" LENGTH="10" NOTNULL="false" DECIMALS="2" SEQUENCE="false" COMMENT="Height (%) of the trimmed ink snippet within its response area's box"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

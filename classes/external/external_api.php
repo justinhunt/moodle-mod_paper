@@ -188,15 +188,9 @@ class external_api extends \core_external\external_api {
             $DB->set_field('paper_evaluations', 'studentnametext', $item->correctedtext, ['id' => $params['evalid']]);
         }
 
-        // Recalculate total grade
-        $sql = "SELECT SUM(pei.itemgrade) 
-                FROM {paper_eval_items} pei
-                JOIN {paper_response_areas} pra ON pra.id = pei.responseareaid
-                WHERE pei.evalid = :evalid AND pra.isnamefield = 0";
-        $totalgrade = $DB->get_field_sql($sql, ['evalid' => $params['evalid']]);
-        $totalgrade = round($totalgrade, 2) + 0;
-
-        $DB->set_field('paper_evaluations', 'totalgrade', $totalgrade, ['id' => $params['evalid']]);
+        // Recalculate total grade.
+        $evalprocessor = new \mod_paper\evaluation_processor($paper);
+        $totalgrade = $evalprocessor->recalculate_total_grade($params['evalid']);
 
         // Update Gradebook
         $evaluation = $DB->get_record('paper_evaluations', ['id' => $params['evalid']]);

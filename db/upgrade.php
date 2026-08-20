@@ -196,5 +196,25 @@ function xmldb_paper_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2024042707, 'paper');
     }
 
+    if ($oldversion < 2024042708) {
+        // Define fields snippetx/snippety/snippetw/snippeth to be added to paper_eval_items.
+        $table = new xmldb_table('paper_eval_items');
+
+        $fields = [
+            'snippetx' => new xmldb_field('snippetx', XMLDB_TYPE_NUMBER, '10, 2', null, null, null, null, 'itemgrade'),
+            'snippety' => new xmldb_field('snippety', XMLDB_TYPE_NUMBER, '10, 2', null, null, null, null, 'snippetx'),
+            'snippetw' => new xmldb_field('snippetw', XMLDB_TYPE_NUMBER, '10, 2', null, null, null, null, 'snippety'),
+            'snippeth' => new xmldb_field('snippeth', XMLDB_TYPE_NUMBER, '10, 2', null, null, null, null, 'snippetw'),
+        ];
+
+        foreach ($fields as $name => $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        upgrade_mod_savepoint(true, 2024042708, 'paper');
+    }
+
     return true;
 }

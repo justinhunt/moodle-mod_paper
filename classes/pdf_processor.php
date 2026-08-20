@@ -119,20 +119,27 @@ class pdf_processor {
      *
      * Response areas are usually drawn taller/wider than the handwriting they capture
      * (to tolerate slight scan drift and give students room to write), so the raw crop
-     * has a lot of blank space around the content. Stretching or aspect-fitting that raw
-     * crop into the display box can't fix this - the blank margin is baked into the
-     * pixels. Trimming it here lets the display/PDF renderers anchor the actual content
-     * to the box, the same way text fields anchor to their measured text height.
+     * has a lot of blank space around the content. Trimming to just the ink also avoids
+     * transplanting the printed guide marks (parentheses, dotted line) from the scan on
+     * top of the same marks already on the clean template background, which would ghost
+     * if the scan is even slightly rotated/shifted relative to the template.
      *
-     * @param string $imagedata Raw JPEG binary data.
-     * @return string Raw JPEG binary data, cropped to the detected ink bounding box (with
-     *                 a small padding margin), or the original data unchanged if no ink
-     *                 was detected or the image could not be read.
+     * The caller needs to know *where* the trimmed patch sat within the original crop so
+     * it can be drawn back at its true position (see snippetx/y/w/h on paper_eval_items),
+     * so this returns that location alongside the trimmed image data rather than just the
+     * bytes.
+     *
+     * @param string $imagedata Raw JPEG binary data (the untrimmed box crop).
+     * @return array{data: string, x: float, y: float, w: float, h: float} 'data' is the
+     *              trimmed JPEG bytes (or the original bytes unchanged if no ink was
+     *              detected or the image could not be read); x/y/w/h are the trimmed
+     *              region's position/size as percentages (0-100) of the original crop's
+     *              own width/height ([0,0,100,100] when nothing was trimmed).
      */
     public function trim_whitespace_border($imagedata) {
         $src = @imagecreatefromstring($imagedata);
         if (!$src) {
-            return $imagedata;
+            return ['data' => $imagedata, 'x' => 0, 'y' => 0, 'w' => 100, 'h' => 100];
         }
 
         $width = imagesx($src);
@@ -160,7 +167,7 @@ class pdf_processor {
         if ($maxx < 0) {
             // No ink detected (blank response) - nothing to trim.
             imagedestroy($src);
-            return $imagedata;
+            return ['data' => $imagedata, 'x' => 0, 'y' => 0, 'w' => 100, 'h' => 100];
         }
 
         // Pad around the detected ink so strokes aren't clipped right at the edge.
@@ -184,7 +191,13 @@ class pdf_processor {
         imagedestroy($src);
         imagedestroy($dest);
 
-        return $trimmed;
+        return [
+            'data' => $trimmed,
+            'x' => ($minx / $width) * 100,
+            'y' => ($miny / $height) * 100,
+            'w' => ($neww / $width) * 100,
+            'h' => ($newh / $height) * 100,
+        ];
     }
 
     /**
@@ -286,11 +299,22 @@ class pdf_processor {
                     if ($item) {
                         $snippetfile = $fs->get_file($context->id, 'mod_paper', 'responsesnippet', $item->id, '/', 'snippet.jpg');
                         if ($snippetfile) {
-                            // Snippets are trimmed to their ink bounding box at save time (see
-                            // process_submissions_task), so fit proportionally (no distortion) and
-                            // anchor to the bottom-center of the box - matching the box's writing
-                            // line, the same way text fields anchor to it via their measured height.
-                            $pdf->Image('@' . $snippetfile->get_content(), $x_mm, $y_mm, $w_mm, $h_mm, 'JPG', '', '', false, 300, '', false, false, 0, 'CB');
+                            if ($item->snippetx !== null && $item->snippety !== null
+                                    && $item->snippetw !== null && $item->snippeth !== null) {
+                                // Snippets are trimmed to their ink bounding box at save time (see
+                                // process_submissions_task), which also records where that trimmed
+                                // patch sat within the box - draw it back at its true position/size
+                                // instead of guessing an anchor.
+                                $sx_mm = $x_mm + ($item->snippetx / 100) * $w_mm;
+                                $sy_mm = $y_mm + ($item->snippety / 100) * $h_mm;
+                                $sw_mm = ($item->snippetw / 100) * $w_mm;
+                                $sh_mm = ($item->snippeth / 100) * $h_mm;
+                                $pdf->Image('@' . $snippetfile->get_content(), $sx_mm, $sy_mm, $sw_mm, $sh_mm, 'JPG', '', '', false, 300, '', false, false, 0, false);
+                            } else {
+                                // Legacy row from before snippet position was recorded - fall back
+                                // to the old fit-and-anchor-to-bottom-center approximation.
+                                $pdf->Image('@' . $snippetfile->get_content(), $x_mm, $y_mm, $w_mm, $h_mm, 'JPG', '', '', false, 300, '', false, false, 0, 'CB');
+                            }
                         }
                     }
                 } else if ($displaytext !== '') {
