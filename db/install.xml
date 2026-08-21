@@ -60,6 +60,8 @@
         <FIELD NAME="feedbackmode" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="none" SEQUENCE="false"/>
         <FIELD NAME="gradingmode" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="none" SEQUENCE="false"/>
         <FIELD NAME="feedbackinstructions" TYPE="text" LENGTH="big" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="responsefont" TYPE="char" LENGTH="50" NOTNULL="true" DEFAULT="target" SEQUENCE="false" COMMENT="Font for this area's student text: 'target'/'native' inherit the activity's language fonts, anything else is a literal font name. See mod_paper\constants::M_FONT_*."/>
+        <FIELD NAME="feedbackfont" TYPE="char" LENGTH="50" NOTNULL="true" DEFAULT="native" SEQUENCE="false" COMMENT="Font for this area's feedback text, same values as responsefont."/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>

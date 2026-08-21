@@ -32,6 +32,7 @@ require_once('lib.php');
 $id = required_param('id', PARAM_INT); // Course module ID.
 $reset = optional_param('reset', 0, PARAM_INT);
 $detect = optional_param('detect', 0, PARAM_INT);
+$previewevalid = optional_param('previewevalid', 0, PARAM_INT); // Which evaluation to preview.
 
 $cm = get_coursemodule_from_id('paper', $id, 0, false, MUST_EXIST);
 $course = $DB->get_record('course', ['id' => $cm->course], '*', MUST_EXIST);
@@ -47,6 +48,20 @@ $PAGE->set_heading(format_string($course->fullname));
 
 $returnurl = new moodle_url('/mod/paper/reports.php', ['id' => $cm->id]);
 $thisurl = new moodle_url('/mod/paper/alignment.php', ['id' => $cm->id]);
+
+// The preview shows a real generated evaluation PDF, so the teacher can see the effect of a
+// change without leaving for reports.php and coming back. Carry the chosen one through every
+// redirect on this page, otherwise saving would silently reset the preview to the first student.
+$evaluations = $DB->get_records('paper_evaluations', ['paperid' => $paper->id], 'id ASC', 'id, studentnametext');
+if ($previewevalid && !isset($evaluations[$previewevalid])) {
+    $previewevalid = 0;
+}
+if (!$previewevalid && !empty($evaluations)) {
+    $previewevalid = reset($evaluations)->id;
+}
+if ($previewevalid) {
+    $thisurl->param('previewevalid', $previewevalid);
+}
 
 if ($reset) {
     require_sesskey();
@@ -118,19 +133,55 @@ if ($mform->is_cancelled()) {
     }
     $DB->update_record('paper', $update);
     \core\notification::success(get_string('alignmentsaved', 'mod_paper'));
-    redirect($returnurl);
+    // Back to this page rather than to reports, so the preview re-renders with the new
+    // numbers and the teacher can keep adjusting.
+    redirect($thisurl);
 }
+
+$reseturl = clone $thisurl;
+$reseturl->params(['reset' => 1, 'sesskey' => sesskey()]);
+$detecturl = clone $thisurl;
+$detecturl->params(['detect' => 1, 'sesskey' => sesskey()]);
 
 $templatecontext = [
     'formhtml' => $mform->render(),
-    'reseturl' => (new moodle_url('/mod/paper/alignment.php',
-        ['id' => $cm->id, 'reset' => 1, 'sesskey' => sesskey()]))->out(false),
-    'detecturl' => (new moodle_url('/mod/paper/alignment.php',
-        ['id' => $cm->id, 'detect' => 1, 'sesskey' => sesskey()]))->out(false),
+    'reseturl' => $reseturl->out(false),
+    'detecturl' => $detecturl->out(false),
     'candetect' => $candetect,
     'returntoreportsurl' => $returnurl->out(false),
     'croppadmm' => format_float((float) get_config('mod_paper', 'croppadmm'), 2, true, true),
+    'hasevaluations' => !empty($evaluations),
 ];
+
+if (!empty($evaluations)) {
+    // Both the selector's options and the frame's initial source need this, and the selector
+    // carries a URL per option so switching student does not have to reload the whole page.
+    $previewurlfor = static function ($evalid) use ($context) {
+        return moodle_url::make_pluginfile_url(
+            $context->id,
+            'mod_paper',
+            'downloadevaluations',
+            $evalid,
+            '/',
+            'evaluation.pdf'
+        )->out(false);
+    };
+
+    $previewoptions = [];
+    foreach ($evaluations as $evaluation) {
+        $name = trim($evaluation->studentnametext ?? '');
+        $previewoptions[] = [
+            'value' => $evaluation->id,
+            // A submission whose name area failed to OCR still has to be pickable.
+            'label' => ($name !== '') ? $name : get_string('evaluationnumber', 'mod_paper', $evaluation->id),
+            'selected' => ($evaluation->id == $previewevalid),
+            'url' => $previewurlfor($evaluation->id),
+        ];
+    }
+
+    $templatecontext['previewoptions'] = $previewoptions;
+    $templatecontext['previewurl'] = $previewurlfor($previewevalid);
+}
 
 if ($detection !== null) {
     // The per-band displacements are what the fit was drawn through, so showing them lets
@@ -159,4 +210,9 @@ if ($detection !== null) {
 echo $OUTPUT->header();
 echo $OUTPUT->heading(get_string('scanalignmentfor', 'mod_paper', format_string($paper->name)));
 echo $OUTPUT->render_from_template('mod_paper/alignment_page', $templatecontext);
+
+if (!empty($evaluations)) {
+    $PAGE->requires->js_call_amd('mod_paper/alignment', 'init');
+}
+
 echo $OUTPUT->footer();

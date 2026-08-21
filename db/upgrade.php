@@ -281,5 +281,26 @@ function xmldb_paper_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2024042711, 'paper');
     }
 
+    if ($oldversion < 2024042713) {
+        // Per-area font overrides. The defaults are the two "inherit" sentinels, which is
+        // exactly the behaviour every existing area already had (student text in the target
+        // language font, feedback in the native one), so nothing changes on upgrade.
+        // The defaults are spelled out rather than taken from constants::M_FONT_*, since an
+        // upgrade step has to keep meaning what it meant when it was written.
+        $table = new xmldb_table('paper_response_areas');
+        $fields = [
+            new xmldb_field('responsefont', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, 'target', 'feedbackinstructions'),
+            new xmldb_field('feedbackfont', XMLDB_TYPE_CHAR, '50', null, XMLDB_NOTNULL, null, 'native', 'responsefont'),
+        ];
+
+        foreach ($fields as $field) {
+            if (!$dbman->field_exists($table, $field)) {
+                $dbman->add_field($table, $field);
+            }
+        }
+
+        upgrade_mod_savepoint(true, 2024042713, 'paper');
+    }
+
     return true;
 }

@@ -43,14 +43,25 @@ $string['feedbacklanguage_help'] = 'The language feedback should be given in.';
 $string['feedbacklanguagefont'] = 'Native language font';
 $string['feedbacklanguagefont_help'] = 'The font used to display feedback on the PDF and web view.';
 
-$string['font_freesans'] = 'FreeSans (Generic)';
-$string['font_courier'] = 'Courier (Monospace)';
-$string['font_helvetica'] = 'Helvetica (Sans-Serif)';
-$string['font_times'] = 'Times (Serif)';
-$string['font_kozminproregular'] = 'KozMinProRegular (Japanese)';
+$string['font_freeserif'] = 'FreeSerif (Serif, widest language support)';
+$string['font_freesans'] = 'FreeSans (Sans-Serif, no Arabic/Thai/Tamil)';
+$string['font_freemono'] = 'FreeMono (Monospace, no Thai/Tamil/Hindi)';
+$string['font_courier'] = 'Courier (Monospace, Western only)';
+$string['font_helvetica'] = 'Helvetica (Sans-Serif, Western only)';
+$string['font_times'] = 'Times (Serif, Western only)';
+$string['font_kozminproregular'] = 'KozMinProRegular (Japanese Serif)';
+$string['font_kozgopromedium'] = 'KozGoProMedium (Japanese Sans-Serif)';
 $string['font_stsongstdlight'] = 'STSongStdLight (Chinese Simplified)';
 $string['font_msungstdlight'] = 'MSungStdLight (Chinese Traditional)';
-$string['font_cid0kr'] = 'CID0KR (Korean)';
+$string['font_hysmyeongjostdmedium'] = 'HYSMyeongJoStdMedium (Korean)';
+$string['font_inherit_target'] = 'Target language font - {$a}';
+$string['font_inherit_native'] = 'Native language font - {$a}';
+
+// Per response area fonts.
+$string['areafonts'] = 'Fonts';
+$string['areafonts_help'] = 'Which font this area is printed in. By default the student\'s writing uses the activity\'s target language font and the feedback uses its native language font. Override them here if this area holds something in a different script - a name written in Japanese, for example, cannot be printed in a Latin-only font and comes out as question marks.';
+$string['responsefont'] = 'Student text font';
+$string['feedbackfont'] = 'Feedback text font';
 
 // Admin settings
 $string['paper:addinstance'] = 'Add a new Paper activity';
@@ -383,6 +394,12 @@ $string['alignmentdetectbutton'] = 'Detect alignment';
 $string['alignmentdetectunavailable'] = 'Nothing to measure yet. A page is kept from each upload for this purpose, so process a submission and then come back. Submissions processed before this feature was added did not keep one.';
 $string['alignmentdetectfailed'] = 'Could not measure the alignment. The retained page or the worksheet template could not be read.';
 $string['alignmentdetected'] = 'Measured alignment filled into the form below. Review the values and save them if they look right.';
+$string['alignmentpreview'] = 'Evaluation preview';
+$string['alignmentpreviewstudent'] = 'Student to preview';
+$string['alignmentpreviewreload'] = 'Reload';
+$string['alignmentpreviewhelp'] = 'This is the real evaluation PDF, rebuilt each time it loads. Saving your changes reloads it, so you can keep adjusting here rather than going back and forth to the reports page. Reload also picks up changes made on the template setup page, such as fonts.';
+$string['alignmentpreviewnone'] = 'No submissions have been processed for this activity yet, so there is nothing to preview.';
+$string['evaluationnumber'] = 'Evaluation {$a}';
 $string['alignmentaxis'] = 'Direction';
 $string['alignmenthorizontal'] = 'Horizontal';
 $string['alignmentvertical'] = 'Vertical';

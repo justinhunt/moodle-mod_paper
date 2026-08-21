@@ -145,21 +145,120 @@ class utils {
     }
 
     /**
-     * Get font options for select lists
+     * The font keys we can safely hand to TCPDF, in the order they are offered.
+     *
+     * Separate from get_font_options() so that validating a stored font does not build (and
+     * translate) the whole label list - resolve_font() runs per area per student when a PDF
+     * is generated.
+     *
+     * @return string[]
+     */
+    public static function get_font_keys() {
+        // Only fonts Moodle actually ships in lib/tcpdf/fonts belong here - TCPDF fatals on a
+        // font definition file it cannot include, it does not fall back. ('cid0kr' used to be
+        // offered for Korean and did exactly that; Moodle ships hysmyeongjostdmedium instead.)
+        //
+        // The freefont family is embedded, so it renders identically everywhere and covers
+        // non-Latin scripts; the core fonts below it are Latin-only and the CJK fonts are CID-0,
+        // meaning the glyphs are not embedded and the reader needs the font installed.
+        return [
+            'freeserif',
+            'freesans',
+            'freemono',
+            'courier',
+            'helvetica',
+            'times',
+            'kozminproregular',
+            'kozgopromedium',
+            'stsongstdlight',
+            'msungstdlight',
+            'hysmyeongjostdmedium',
+        ];
+    }
+
+    /**
+     * Get font options for select lists, keyed by font name.
      *
      * @return array
      */
     public static function get_font_options() {
+        $options = [];
+        foreach (self::get_font_keys() as $key) {
+            $options[$key] = get_string('font_' . $key, 'mod_paper');
+        }
+        return $options;
+    }
+
+    /**
+     * Get the font options offered per response area.
+     *
+     * Two "inherit" entries are prepended to the plain font list, naming the font they
+     * currently resolve to so a teacher can see what they would be getting. Storing the
+     * sentinel rather than the resolved name means an area left alone still follows the
+     * activity's language fonts when those are later changed.
+     *
+     * @param object $paper The paper instance (for the fonts the sentinels resolve to).
+     * @return array Font key => label.
+     */
+    public static function get_area_font_options($paper) {
+        $fonts = self::get_font_options();
+
+        // Resolve rather than read the columns directly, so the label names the font the area
+        // will really be printed in even if the activity stores one we can no longer honour.
+        $targetfont = self::resolve_font(null, $paper, constants::M_FONT_TARGET);
+        $nativefont = self::resolve_font(null, $paper, constants::M_FONT_NATIVE);
+        $targetlabel = $fonts[$targetfont] ?? $targetfont;
+        $nativelabel = $fonts[$nativefont] ?? $nativefont;
+
         return [
-            'freesans' => get_string('font_freesans', 'mod_paper'),
-            'courier' => get_string('font_courier', 'mod_paper'),
-            'helvetica' => get_string('font_helvetica', 'mod_paper'),
-            'times' => get_string('font_times', 'mod_paper'),
-            'kozminproregular' => get_string('font_kozminproregular', 'mod_paper'),
-            'stsongstdlight' => get_string('font_stsongstdlight', 'mod_paper'),
-            'msungstdlight' => get_string('font_msungstdlight', 'mod_paper'),
-            'cid0kr' => get_string('font_cid0kr', 'mod_paper'),
-        ];
+            constants::M_FONT_TARGET => get_string('font_inherit_target', 'mod_paper', $targetlabel),
+            constants::M_FONT_NATIVE => get_string('font_inherit_native', 'mod_paper', $nativelabel),
+        ] + $fonts;
+    }
+
+    /**
+     * Resolves a stored per-area font setting to an actual TCPDF font name.
+     *
+     * @param string|null $font Stored value: a sentinel from constants::M_FONT_*, a literal
+     *                          font name, or NULL/'' on a row saved before this setting existed.
+     * @param object $paper The paper instance.
+     * @param string $fallback Which sentinel an unset value means for this field.
+     * @return string A TCPDF font name.
+     */
+    public static function resolve_font($font, $paper, $fallback = constants::M_FONT_TARGET) {
+        $font = ($font === null || $font === '') ? $fallback : $font;
+
+        if ($font === constants::M_FONT_TARGET) {
+            $font = $paper->targetlanguagefont ?? '';
+        } else if ($font === constants::M_FONT_NATIVE) {
+            $font = $paper->feedbacklanguagefont ?? '';
+        }
+
+        // Validate whatever we ended up with, including the activity-level fonts - TCPDF fatals
+        // on a font it cannot load, so never hand back a name we are not sure of.
+        return in_array($font, self::get_font_keys(), true) ? $font : constants::M_FONT_FALLBACK;
+    }
+
+    /**
+     * The font a response area's student text (OCR / corrected) is printed in.
+     *
+     * @param object $area The response area row.
+     * @param object $paper The paper instance.
+     * @return string A TCPDF font name.
+     */
+    public static function get_response_font($area, $paper) {
+        return self::resolve_font($area->responsefont ?? null, $paper, constants::M_FONT_TARGET);
+    }
+
+    /**
+     * The font a response area's feedback text is printed in.
+     *
+     * @param object $area The response area row.
+     * @param object $paper The paper instance.
+     * @return string A TCPDF font name.
+     */
+    public static function get_feedback_font($area, $paper) {
+        return self::resolve_font($area->feedbackfont ?? null, $paper, constants::M_FONT_NATIVE);
     }
 
     /**
@@ -172,17 +271,23 @@ class utils {
         switch ($font) {
             case 'courier':
                 return '"Courier New", Courier, monospace';
+            case 'freemono':
+                return '"FreeMono", "Courier New", monospace';
             case 'helvetica':
                 return 'Helvetica, Arial, sans-serif';
             case 'times':
                 return '"Times New Roman", Times, serif';
+            case 'freeserif':
+                return '"FreeSerif", "Times New Roman", serif';
             case 'kozminproregular':
                 return '"Kozuka Mincho Pro", "MS Mincho", serif';
+            case 'kozgopromedium':
+                return '"Kozuka Gothic Pro", "MS Gothic", sans-serif';
             case 'stsongstdlight':
             case 'msungstdlight':
                 return '"STSong", "SimSun", serif';
-            case 'cid0kr':
-                return '"Malgun Gothic", "Batang", serif';
+            case 'hysmyeongjostdmedium':
+                return '"HYSMyeongJo", "Batang", "Malgun Gothic", serif';
             case 'freesans':
             default:
                 return '"FreeSans", sans-serif';

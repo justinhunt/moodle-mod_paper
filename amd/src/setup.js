@@ -117,7 +117,7 @@ define(['jquery', 'core/log', 'core/str', 'mod_paper/constants'], function($, lo
 
                 if (val === 'none') {
                     $('#fb_box_' + areaId).hide();
-                    $(this).closest('.area-card').find('.fb-pos-fieldset').hide();
+                    $(this).closest('.area-card').find('.fb-pos-fieldset, .feedback-font-wrapper').hide();
                 } else {
                     var fbBox = $('#fb_box_' + areaId);
                     var card = $(this).closest('.area-card');
@@ -159,7 +159,7 @@ define(['jquery', 'core/log', 'core/str', 'mod_paper/constants'], function($, lo
                     }
 
                     fbBox.show();
-                    card.find('.fb-pos-fieldset').show();
+                    card.find('.fb-pos-fieldset, .feedback-font-wrapper').show();
                 }
             });
 
@@ -264,6 +264,10 @@ define(['jquery', 'core/log', 'core/str', 'mod_paper/constants'], function($, lo
                     newCard.find('input[name*="[grammarcorrections]"][value="major"]').prop('checked', true);
                     newCard.find('input[name*="[feedbackmode]"][value="none"]').prop('checked', true);
                     newCard.find('input[name*="[gradingmode]"][value="none"]').prop('checked', true);
+                    // The blanking loop above leaves the font selects showing nothing, so put
+                    // them back on the two "inherit the activity font" options.
+                    newCard.find('select[name^="responsefont["]').val(constants.FONT_TARGET);
+                    newCard.find('select[name^="feedbackfont["]').val(constants.FONT_NATIVE);
                     newCard.find('.manual-grade-wrapper').hide();
                     newCard.find('.grade-instructions-wrapper').hide();
                     newCard.find('.feedback-instructions-wrapper').hide();
@@ -375,6 +379,9 @@ define(['jquery', 'core/log', 'core/str', 'mod_paper/constants'], function($, lo
                             newCard.find('input[name*="[grammarcorrections]"][value="major"]').prop('checked', true);
                             newCard.find('input[name*="[feedbackmode]"][value="none"]').prop('checked', true);
                             newCard.find('input[name*="[gradingmode]"][value="none"]').prop('checked', true);
+                            // See the add-area handler: restore the blanked font selects.
+                            newCard.find('select[name^="responsefont["]').val(constants.FONT_TARGET);
+                            newCard.find('select[name^="feedbackfont["]').val(constants.FONT_NATIVE);
                             newCard.find('.manual-grade-wrapper').hide();
                             newCard.find('.grade-instructions-wrapper').hide();
                             newCard.find('.feedback-instructions-wrapper').hide();

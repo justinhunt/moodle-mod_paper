@@ -361,8 +361,9 @@ class pdf_processor {
                         $html = htmlspecialchars($displaytext);
                     }
                     
-                    // Select font for student response (OCR/Corrected text).
-                    $studentfont = $paper->targetlanguagefont ?? 'courier';
+                    // Select font for student response (OCR/Corrected text). Per-area, since a
+                    // name written in another script can't be printed in the target language's font.
+                    $studentfont = utils::get_response_font($area, $paper);
                     $pdf->SetFont($studentfont, '', 12);
                     
                     if (utils::is_name_area($area)) {
@@ -382,7 +383,7 @@ class pdf_processor {
 
                 // Render feedback in its dedicated feedback area (independent of display text).
                 if (!empty($feedback) && utils::is_graded_area($area) && ($area->feedbackmode ?? 'none') !== 'none') {
-                    $feedbackfont = $paper->feedbacklanguagefont ?? 'freesans';
+                    $feedbackfont = utils::get_feedback_font($area, $paper);
                     $pdf->SetFont($feedbackfont, '', 11);
                     $pdf->SetTextColor(0, 0, 0);
 
@@ -397,16 +398,9 @@ class pdf_processor {
                     $pdf->SetTextColor(0, 0, 0);
                 }
 
-                // Add item grade to the top right of the area (shifted outside).
+                // Add the item grade in a badge to the right of the area.
                 if ($grade !== null && utils::is_graded_area($area) && ($area->gradingmode ?? 'none') !== 'none') {
-                    $pdf->SetFont('freesans', 'B', 20);
-                    $pdf->SetTextColor(0, 128, 0); // Green.
-                    $grade_text = (round($grade, 2) + 0);
-                    // Position 2mm right and 5mm above the top-right corner of the box.
-                    $pdf->Text($x_mm + $w_mm + 2, $y_mm - 5, $grade_text);
-                    // Reset font/color for next response.
-                    $pdf->SetFont('freesans', '', 14);
-                    $pdf->SetTextColor(0, 0, 0);
+                    $this->draw_grade_badge($pdf, (round($grade, 2) + 0), $x_mm, $y_mm, $w_mm);
                 }
             }
 
@@ -428,6 +422,52 @@ class pdf_processor {
     }
 
     /**
+     * Draws a response area's score in a bordered badge just outside its right-hand edge.
+     *
+     * The score used to be bare text baselined 5mm above the box, which read as floating
+     * away from the area it belonged to. It now sits level with the top of the box inside a
+     * rounded outline, so a reader can see which row it scores.
+     *
+     * @param \pdf $pdf The in-progress PDF document.
+     * @param string|float $gradetext The score to print.
+     * @param float $areax Left edge of the response area, in mm.
+     * @param float $areay Top edge of the response area, in mm.
+     * @param float $areaw Width of the response area, in mm.
+     */
+    protected function draw_grade_badge($pdf, $gradetext, $areax, $areay, $areaw) {
+        $gap = 2;      // Clear space between the response area and the badge.
+        $drop = 1.5;   // How far below the area's top edge the badge starts.
+        $padx = 3;     // Horizontal padding inside the border.
+        $height = 9;
+        $radius = 1.5;
+
+        $pdf->SetFont('freesans', 'B', 16);
+        $pdf->SetTextColor(0, 128, 0); // Green.
+        $pdf->SetDrawColor(0, 128, 0);
+        $pdf->SetLineWidth(0.4);
+
+        $gradetext = (string) $gradetext;
+        // Grow the badge for a wide score ("10", "8.5") rather than letting the text spill out.
+        $width = max(11, $pdf->GetStringWidth($gradetext) + ($padx * 2));
+
+        $bx = $areax + $areaw + $gap;
+        // A response area drawn out to the right margin leaves no room alongside it, so pull
+        // the badge back onto the page rather than off the edge of it.
+        $bx = min($bx, \mod_paper\constants::M_PAGE_W_MM - $width - 2);
+        $by = $areay + $drop;
+
+        $pdf->RoundedRect($bx, $by, $width, $height, $radius, '1111', 'D');
+        $pdf->SetXY($bx, $by);
+        $pdf->Cell($width, $height, $gradetext, 0, 0, 'C', false, '', 0, false, 'T', 'M');
+
+        // Reset font/colour for the next response.
+        $pdf->SetFont('freesans', '', 14);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetDrawColor(0, 0, 0);
+        $pdf->SetLineWidth(0.2);
+    }
+
+    /**
      * Prepends a summary page listing every student and their total grade,
      * mirroring the on-screen table on reports.php.
      *
@@ -442,13 +482,20 @@ class pdf_processor {
         $pdf->AddPage();
         $pdf->SetTextColor(0, 0, 0);
 
-        $namefont = $paper->targetlanguagefont ?? 'freesans';
+        // Student names are in the target language, so they get the activity's font for it.
+        $namefont = utils::resolve_font(null, $paper, \mod_paper\constants::M_FONT_TARGET);
+        // The headings around them are Moodle strings in the site language, which is not
+        // necessarily Latin, so they get the widest-coverage font rather than FreeSans.
+        $chromefont = \mod_paper\constants::M_FONT_FALLBACK;
 
-        $pdf->SetFont('freesans', 'B', 16);
+        $pdf->SetFont($chromefont, 'B', 16);
         $pdf->MultiCell(0, 10, get_string('evaluationreportsfor', 'mod_paper', $paper->name), 0, 'L', false, 1);
         $pdf->Ln(4);
 
-        $pdf->SetFont($namefont, '', 11);
+        $pdf->SetFont($chromefont, '', 11);
+        // Only the name column carries target-language text; the rest is site-language chrome,
+        // so the two fonts are applied per cell rather than to the table as a whole.
+        $namestyle = ' style="font-family:' . $namefont . ';"';
 
         $html = '<table cellpadding="4" border="1">';
         $html .= '<tr style="background-color:#eeeeee;font-weight:bold;">';
@@ -462,7 +509,7 @@ class pdf_processor {
         foreach ($evaluations as $eval) {
             $html .= '<tr>';
             $html .= '<td>' . htmlspecialchars($eval->id) . '</td>';
-            $html .= '<td>' . htmlspecialchars($eval->studentnametext ?? '') . '</td>';
+            $html .= '<td' . $namestyle . '>' . htmlspecialchars($eval->studentnametext ?? '') . '</td>';
             if ($hasgradeareas) {
                 $gradetext = $eval->totalgrade !== null ? (round($eval->totalgrade, 2) + 0) . ' / ' . $maxpossible : '';
                 $html .= '<td>' . htmlspecialchars($gradetext) . '</td>';

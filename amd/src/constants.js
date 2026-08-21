@@ -33,5 +33,9 @@ define([], function() {
         AREATYPE_USERNAME: 2,
         AREATYPE_DISPLAYONLY: 3,
         AREATYPE_UNGRADED: 4,
+
+        // Per-area font selection (paper_response_areas.responsefont/feedbackfont).
+        FONT_TARGET: 'target',
+        FONT_NATIVE: 'native',
     };
 });

@@ -115,7 +115,7 @@ if ($file) {
             $bottommosty = $bottom;
         }
 
-        $targetfontcss = \mod_paper\utils::get_css_font_family($paper->targetlanguagefont ?? 'courier');
+        $targetfontcss = \mod_paper\utils::get_css_font_family(utils::get_response_font($area, $paper));
         // Bottom-align name/username text and display-only snippets, so both sit on the box's
         // writing line regardless of how generously the box itself was drawn.
         $bottomalign = utils::is_name_area($area) || utils::is_displayonly_area($area);
@@ -131,7 +131,7 @@ if ($file) {
         $feedbackhtml = null;
         $feedbackstyle = null;
         if (!empty($feedback) && utils::is_graded_area($area) && ($area->feedbackmode ?? 'none') !== 'none') {
-            $feedbackfontcss = \mod_paper\utils::get_css_font_family($paper->feedbacklanguagefont ?? 'freesans');
+            $feedbackfontcss = \mod_paper\utils::get_css_font_family(utils::get_feedback_font($area, $paper));
             $feedbackhtml = htmlspecialchars(html_entity_decode($feedback, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
             $fb = \mod_paper\utils::get_effective_feedback_box($area);

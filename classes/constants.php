@@ -58,6 +58,23 @@ class constants {
         self::M_AREATYPE_UNGRADED,
     ];
 
+    // Per-area font selection (paper_response_areas.responsefont/feedbackfont). Anything
+    // other than these two sentinels is a literal font name from utils::get_font_options().
+    // They are stored rather than resolved at save time so that changing the activity's
+    // language fonts still carries through to every area that did not opt out.
+    /** @var string Inherit paper.targetlanguagefont. */
+    const M_FONT_TARGET = 'target';
+    /** @var string Inherit paper.feedbacklanguagefont. */
+    const M_FONT_NATIVE = 'native';
+
+    /**
+     * @var string Last-resort font, used when a stored font name is not one we can honour.
+     * FreeSerif because it is embedded (so it renders the same in every viewer) and has by far
+     * the widest script coverage of the fonts Moodle ships - Arabic, Hebrew, Cyrillic, Greek,
+     * Thai, Devanagari and Tamil included.
+     */
+    const M_FONT_FALLBACK = 'freeserif';
+
     // Languages
     const M_LANG_ENUS = 'en-US';
     const M_LANG_ENGB = 'en-GB';

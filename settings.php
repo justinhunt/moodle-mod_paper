@@ -81,12 +81,12 @@ if ($ADMIN->fulltree) {
     $settings->add(new admin_setting_configselect('mod_paper/defaulttargetlanguagefont',
         get_string('defaulttargetlanguagefont', 'mod_paper'),
         get_string('defaulttargetlanguagefont_desc', 'mod_paper'),
-        'courier', $fontoptions));
+        'freemono', $fontoptions));
 
     $settings->add(new admin_setting_configselect('mod_paper/defaultfeedbacklanguagefont',
         get_string('defaultfeedbacklanguagefont', 'mod_paper'),
         get_string('defaultfeedbacklanguagefont_desc', 'mod_paper'),
-        'freesans', $fontoptions));
+        'freeserif', $fontoptions));
 
     $settings->add(new admin_setting_configpasswordunmask('mod_paper/openaicredentials',
         get_string('openaicredentials', 'mod_paper'),

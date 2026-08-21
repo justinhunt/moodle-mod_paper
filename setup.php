@@ -55,7 +55,11 @@ if ($_POST && isset($_POST['sesskey']) && confirm_sesskey() && empty($_FILES['te
     $gm = optional_param_array('gradingmode', [], PARAM_ALPHANUMEXT);
     $mgrade = optional_param_array('maxgrade', [], PARAM_FLOAT);
     $gi = optional_param_array('gradeinstructions', [], PARAM_RAW);
-    
+
+    $rfont = optional_param_array('responsefont', [], PARAM_ALPHANUMEXT);
+    $fbfont = optional_param_array('feedbackfont', [], PARAM_ALPHANUMEXT);
+    $validfonts = array_keys(utils::get_area_font_options($paper));
+
     $bx = optional_param_array('box_x', [], PARAM_FLOAT);
     $by = optional_param_array('box_y', [], PARAM_FLOAT);
     $bw = optional_param_array('box_w', [], PARAM_FLOAT);
@@ -105,7 +109,17 @@ if ($_POST && isset($_POST['sesskey']) && confirm_sesskey() && empty($_FILES['te
         $record->fb_y = $fby[$post_id] ?? 0;
         $record->fb_w = $fbw[$post_id] ?? 0;
         $record->fb_h = $fbh[$post_id] ?? 0;
-        
+
+        // Anything the select did not offer falls back to inheriting the activity's fonts.
+        $responsefont = $rfont[$post_id] ?? constants::M_FONT_TARGET;
+        $record->responsefont = in_array($responsefont, $validfonts, true)
+            ? $responsefont
+            : constants::M_FONT_TARGET;
+        $feedbackfont = $fbfont[$post_id] ?? constants::M_FONT_NATIVE;
+        $record->feedbackfont = in_array($feedbackfont, $validfonts, true)
+            ? $feedbackfont
+            : constants::M_FONT_NATIVE;
+
         // If the ID contains 'new', it's a dynamically added box
         if (strpos((string)$post_id, 'new') !== false) {
             $DB->insert_record('paper_response_areas', $record);
@@ -235,6 +249,21 @@ if ($file) {
 $areas = $DB->get_records('paper_response_areas', ['paperid' => $paper->id], 'responsenumber ASC');
 if (!empty($areas)) {
     $contextdata['hastemplate'] = true;
+
+    // Both font selects offer the same list, so build it once and only vary what is selected.
+    $fontoptions = utils::get_area_font_options($paper);
+    $buildfontoptions = static function ($selected, $fallback) use ($fontoptions) {
+        $selected = ($selected === null || $selected === '') ? $fallback : $selected;
+        if (!array_key_exists($selected, $fontoptions)) {
+            $selected = $fallback;
+        }
+        $out = [];
+        foreach ($fontoptions as $key => $label) {
+            $out[] = ['key' => $key, 'value' => $label, 'selected' => ($key === $selected)];
+        }
+        return $out;
+    };
+
     foreach ($areas as $area) {
         $contextdata['responseareas'][] = [
             'id' => $area->id,
@@ -280,11 +309,18 @@ if (!empty($areas)) {
             'gradingmode_incorrect' => ($area->gradingmode == 'incorrect'),
             'gradingmode_overall' => ($area->gradingmode == 'overall'),
             'maxgrade' => ($area->maxgrade !== null) ? round($area->maxgrade, 2) + 0 : 0,
+            'responsefont_options' => $buildfontoptions($area->responsefont ?? null, constants::M_FONT_TARGET),
+            'feedbackfont_options' => $buildfontoptions($area->feedbackfont ?? null, constants::M_FONT_NATIVE),
         ];
     }
     
-    // Pass json array for Javascript box drawing (via hidden field in template)
-    $contextdata['responseareas_json'] = json_encode($contextdata['responseareas']);
+    // Pass json array for Javascript box drawing (via hidden field in template). The font
+    // option lists are markup for the selects only - keep them out of the payload the
+    // canvas reads, which is embedded in an attribute on every page load.
+    $contextdata['responseareas_json'] = json_encode(array_map(static function ($area) {
+        unset($area['responsefont_options'], $area['feedbackfont_options']);
+        return $area;
+    }, $contextdata['responseareas']));
 }
 
 $PAGE->set_title(get_string('setuptemplate', 'mod_paper'));

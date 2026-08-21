@@ -65,7 +65,7 @@ class mod_paper_mod_form extends moodleform_mod {
 
         $mform->addElement('select', 'targetlanguagefont', get_string('targetlanguagefont', 'mod_paper'), $fontoptions);
         $mform->addHelpButton('targetlanguagefont', 'targetlanguagefont', 'mod_paper');
-        $mform->setDefault('targetlanguagefont', get_config('mod_paper', 'defaulttargetlanguagefont') ?: 'courier');
+        $mform->setDefault('targetlanguagefont', get_config('mod_paper', 'defaulttargetlanguagefont') ?: 'freemono');
 
         $mform->addElement('select', 'feedbacklanguage', get_string('feedbacklanguage', 'mod_paper'), $langoptions);
         $mform->addHelpButton('feedbacklanguage', 'feedbacklanguage', 'mod_paper');
@@ -73,7 +73,7 @@ class mod_paper_mod_form extends moodleform_mod {
 
         $mform->addElement('select', 'feedbacklanguagefont', get_string('feedbacklanguagefont', 'mod_paper'), $fontoptions);
         $mform->addHelpButton('feedbacklanguagefont', 'feedbacklanguagefont', 'mod_paper');
-        $mform->setDefault('feedbacklanguagefont', get_config('mod_paper', 'defaultfeedbacklanguagefont') ?: 'freesans');
+        $mform->setDefault('feedbacklanguagefont', get_config('mod_paper', 'defaultfeedbacklanguagefont') ?: 'freeserif');
 
         $mform->addElement('select', 'showtotalscore', get_string('showtotalscore', 'mod_paper'), $options);
         $mform->addHelpButton('showtotalscore', 'showtotalscore', 'mod_paper');

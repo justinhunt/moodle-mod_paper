@@ -51,6 +51,7 @@ class backup_paper_activity_structure_step extends backup_activity_structure_ste
             'grammarcorrections', 'feedbackgrammar', 'feedbackincorrect', 'feedbackoverall',
             'givegrade', 'maxgrade', 'gradeinstructions',
             'feedbackmode', 'gradingmode', 'feedbackinstructions',
+            'responsefont', 'feedbackfont',
         ]);
 
         $evaluations = new backup_nested_element('evaluations');

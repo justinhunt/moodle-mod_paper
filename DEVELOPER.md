@@ -92,6 +92,63 @@ All tables use the `paper_` prefix:
 | `gradingmode` | VARCHAR(20) | `none`, `incorrect`, `overall` |
 | `maxgrade` | DECIMAL(10,2) | Max points for this response area |
 | `gradeinstructions` | TEXT | Custom prompt instructions for AI grading |
+| `responsefont` | VARCHAR(50) | Font for this area's student text — see below |
+| `feedbackfont` | VARCHAR(50) | Font for this area's feedback text — see below |
+
+#### Per-area fonts (`responsefont` / `feedbackfont`)
+
+The activity-level `targetlanguagefont` / `feedbacklanguagefont` decide the font for *all*
+student text and *all* feedback respectively, which breaks down as soon as one area holds a
+different script from the rest — a name written in Japanese printed in a Latin-only font
+comes out of TCPDF as `???`. Each area can therefore override its own two fonts.
+
+Both columns hold either a literal font key from `utils::get_font_options()`, or one of two
+sentinels: `constants::M_FONT_TARGET` (`'target'`) and `constants::M_FONT_NATIVE`
+(`'native'`), meaning "inherit the activity's target/native language font". The sentinels are
+the defaults (`target` for `responsefont`, `native` for `feedbackfont`), and they are stored
+rather than resolved at save time, so changing the activity's fonts still carries through to
+every area that did not opt out.
+
+Never read these columns directly — call `utils::get_response_font($area, $paper)` and
+`utils::get_feedback_font($area, $paper)`, which resolve the sentinels and fall back to
+`constants::M_FONT_FALLBACK` if the stored font is not one we can honour. That validation
+covers the *activity-level* fonts too, not just the per-area ones, because TCPDF fatals on a
+font definition file it cannot include rather than falling back on its own.
+`utils::get_area_font_options($paper)` builds the select list, labelling the sentinels with the
+font they currently resolve to.
+
+#### The font list (`utils::get_font_keys()`)
+
+Only fonts Moodle actually ships in `lib/tcpdf/fonts/` may be listed. `cid0kr` was offered for
+Korean until it turned out Moodle does not ship it — picking it threw
+`TCPDF ERROR: Could not include font definition file: cid0kr`. Korean is `hysmyeongjostdmedium`.
+
+The list splits three ways, which is what the option labels are trying to convey:
+
+| Group | Fonts | Embedded? | Coverage |
+| :--- | :--- | :--- | :--- |
+| GNU FreeFont | `freeserif`, `freesans`, `freemono` | Yes | FreeSerif is the widest — Arabic, Hebrew, Cyrillic, Greek, Thai, Devanagari, Tamil. FreeSans has **no** Arabic/Thai/Tamil; FreeMono no Thai/Tamil/Devanagari. |
+| PDF core 14 | `courier`, `helvetica`, `times` | No (assumed present) | Western only — non-Latin comes out as `?`. |
+| CJK CID-0 | `kozminproregular`, `kozgopromedium`, `stsongstdlight`, `msungstdlight`, `hysmyeongjostdmedium` | No | Glyphs are **not** embedded; the reader needs the font. |
+
+Defaults are `freemono` for the target language and `freeserif` for the native one
+(`settings.php`, mirrored as `?:` fallbacks in `mod_form.php`). FreeMono was chosen over Courier
+because its Latin output is visually identical while it also covers Arabic/Hebrew/Cyrillic/Greek,
+and being embedded it renders the same in every viewer. Changing these defaults only affects new
+activities — existing `paper` rows keep their stored font, and an existing site keeps its stored
+admin setting until someone changes it.
+
+Two rendering caveats worth knowing before chasing a "bug":
+
+- **CID-0 fonts** put correct UniJIS-UCS2-H character codes in the PDF but need a viewer with
+  the matching CJK font. Rasterising with a Ghostscript build lacking the Adobe-Japan1 resources
+  gives substituted Latin glyphs even though the file is correct — check in a real PDF viewer,
+  not via `gs`.
+- **Complex scripts.** TCPDF does Arabic contextual shaping and bidi automatically and gets it
+  right. It has *no* Indic shaping, so Devanagari/Tamil render with visible viramas instead of
+  proper conjuncts — legible, but typographically wrong, and no font choice fixes it. Arabic in a
+  monospace font (`freemono`) is shaped but visually disconnected, since each letter is forced
+  into its own cell; an Arabic-target activity wants `freeserif`.
 
 #### Area types (`areatype`)
 
@@ -152,6 +209,8 @@ public/mod/paper/
 ├── amd/src/
 │   ├── setup.js            # HTML5 Canvas UI for drawing & configuring response/feedback boxes
 │   ├── view_eval.js        # Interactive teacher review page (live inline editing & recalculation)
+│   ├── alignment.js        # Evaluation PDF preview on the scan alignment page
+│   ├── constants.js        # Shared enum values, mirroring classes/constants.php
 │   └── reports.js          # Submissions list table handling and bulk actions
 ├── classes/
 │   ├── ai_manager.php      # Abstraction layer for AI providers
@@ -175,6 +234,7 @@ public/mod/paper/
 ├── samples/
 │   ├── test_worksheet.pdf                 # Sample blank worksheet template
 │   └── test_worksheet_submissions.pdf     # Sample multi-page completed student worksheets
+├── alignment.php           # Scan alignment correction page, with a live evaluation preview
 ├── presets.php             # Preset manager page for grading and feedback templates
 ├── process_submissions.php # Submission upload handler and background task dispatcher
 ├── re_evaluate.php         # Re-evaluation trigger endpoint
@@ -214,7 +274,19 @@ Editing a name/username area writes back to `paper_evaluations.studentnametext`,
 - Uses TCPDF loaded via Moodle core.
 - Loads the original blank worksheet background image.
 - Prints student name at top.
-- Writes corrected text and feedback inside designated bounding boxes (`fb_*`) using configured fonts (`targetlanguagefont`, `feedbacklanguagefont`).
+- Writes corrected text and feedback inside designated bounding boxes (`fb_*`), each in the font `utils::get_response_font()` / `utils::get_feedback_font()` resolves for that area (see "Per-area fonts" above) rather than one font for the whole page.
+- `draw_grade_badge()` puts each item's score in a green rounded outline just outside the response area's right edge, level with the top of the box. It widens for a longer score and is pulled back onto the page if the area runs out to the right margin.
+
+### E. Scan Alignment (`alignment.php` + `amd/src/alignment.js`)
+Corrects for displacement between the worksheet as printed and as scanned back in, which
+decides where display-only snippets are cut from their stored crops. Alongside the form sits a
+live preview: an `<iframe>` pointed at the `downloadevaluations` pluginfile URL for one chosen
+evaluation. That PDF is generated per request, so the preview shows current output — including
+changes made elsewhere, such as fonts set on `setup.php` — and saving redirects back to this
+page rather than to `reports.php` so the teacher can iterate without leaving. The chosen
+evaluation rides along on every redirect as `previewevalid`. `alignment.js` swaps the frame
+`src` when the student selector changes and appends a `cachebust` parameter, since a browser's
+PDF viewer will otherwise happily re-show what it already has for an unchanged URL.
 
 ---
 

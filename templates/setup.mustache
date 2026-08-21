@@ -99,6 +99,29 @@
                             </div>
                         </fieldset>
 
+                        <fieldset class="border p-3 mb-3">
+                            <legend class="w-auto px-2 font-weight-bold" style="font-size: 1rem;">{{#str}}areafonts, mod_paper{{/str}}</legend>
+                            <p class="text-muted small mb-3">{{#str}}areafonts_help, mod_paper{{/str}}</p>
+                            <div class="row">
+                                <div class="col-md-6 form-group mb-0">
+                                    <label class="small" for="responsefont_{{id}}">{{#str}}responsefont, mod_paper{{/str}}</label>
+                                    <select class="form-control form-control-sm" id="responsefont_{{id}}" name="responsefont[{{id}}]">
+                                        {{#responsefont_options}}
+                                        <option value="{{key}}" {{#selected}}selected{{/selected}}>{{value}}</option>
+                                        {{/responsefont_options}}
+                                    </select>
+                                </div>
+                                <div class="col-md-6 form-group mb-0 feedback-font-wrapper" {{#feedbackmode_none}}style="display: none;"{{/feedbackmode_none}}>
+                                    <label class="small" for="feedbackfont_{{id}}">{{#str}}feedbackfont, mod_paper{{/str}}</label>
+                                    <select class="form-control form-control-sm" id="feedbackfont_{{id}}" name="feedbackfont[{{id}}]">
+                                        {{#feedbackfont_options}}
+                                        <option value="{{key}}" {{#selected}}selected{{/selected}}>{{value}}</option>
+                                        {{/feedbackfont_options}}
+                                    </select>
+                                </div>
+                            </div>
+                        </fieldset>
+
                         <div class="standard-fields-wrapper" {{#hidestandardfields}}style="display: none;"{{/hidestandardfields}}>
                             <fieldset class="border p-3 mb-3">
                                 <legend class="w-auto px-2 font-weight-bold" style="font-size: 1rem;">{{#str}}questiontopic, mod_paper{{/str}}</legend>
