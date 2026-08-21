@@ -197,6 +197,38 @@ Every activity module must ship a `backup_MODNAME_activity_task`/`restore_MODNAM
 
 ---
 
+## 3b. Deletion, Course Reset & File Cleanup
+
+Files outlive rows unless something deletes them: `responsesnippet` and `areacrop` are keyed by
+`paper_eval_items.id`, and `submissions` by an ephemeral batch id that no row references once
+processing finishes. Deleting an eval item on its own therefore orphans files permanently.
+Two `lib.php` helpers own that cleanup, and every delete path goes through one of them:
+
+- **`paper_delete_evaluation($evaluation, $context)`** — one evaluation, its items, and those
+  items' files (`constants::M_ITEM_FILEAREAS`). Used by `delete_eval.php`.
+- **`paper_delete_all_evaluations($paper, $context)`** — every evaluation for one paper, and
+  all of `constants::M_USERDATA_FILEAREAS` wholesale. Used by `delete_all_evals.php` and by
+  the course reset.
+
+Neither touches `paper_response_areas` or the `template` file area: those are the worksheet's
+configuration, not student data, and survive a reset exactly as the backup treats them
+(unconditionally backed up, versus evaluations being gated on "include user data").
+
+**Course reset** is implemented by the four standard callbacks — `paper_reset_userdata()`,
+`paper_reset_course_form_definition()`, `paper_reset_course_form_defaults()` and
+`paper_reset_gradebook()`. A module missing the first two is listed under "not supported" on the
+course reset page and silently keeps all its data through a reset, which is what mod_paper did
+before these existed. `paper_reset_userdata()` falls back to deleting rows only if a paper has no
+course module (hence no context, hence no files to clear).
+
+**Activity/course deletion needs no plugin code for files.** `course_delete_module()` calls
+`$fs->delete_area_files($modcontext->id)` immediately after `paper_delete_instance()`, and
+`remove_course_contents()` deletes the module contexts, which does the same. So every file area
+in the module context goes automatically; `paper_delete_instance()` only has to clear the
+database rows, which is why it does not repeat the file deletion.
+
+---
+
 ## 4. Key Components & Directory Map
 
 ```

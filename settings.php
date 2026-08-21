@@ -40,6 +40,10 @@ if ($ADMIN->fulltree) {
         get_string('savedebugcrops_desc', 'mod_paper'),
         0));
 
+    // The crops are only ever shown on the Developer page, so this setting does nothing on
+    // its own - grey it out rather than offering a switch with no effect.
+    $settings->hide_if('mod_paper/savedebugcrops', 'mod_paper/enabledebugfeatures', 'notchecked');
+
     $settings->add(new admin_setting_heading('mod_paper/scanalignment_heading',
         get_string('scanalignment_heading', 'mod_paper'),
         get_string('scanalignment_heading_desc', 'mod_paper')));

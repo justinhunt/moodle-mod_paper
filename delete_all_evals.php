@@ -35,22 +35,17 @@ require_login($course, true, $cm);
 require_capability('mod/paper:manage', context_module::instance($cm->id));
 require_sesskey();
 
-// Get all evaluations for this paper
-$evaluations = $DB->get_records('paper_evaluations', ['paperid' => $paper->id], '', 'id');
+// Check there is something to delete before reporting that there was.
+$hasevaluations = $DB->record_exists('paper_evaluations', ['paperid' => $paper->id]);
 
-if ($evaluations) {
-    $evalids = array_keys($evaluations);
-    list($insql, $params) = $DB->get_in_or_equal($evalids);
-    
-    // Delete all eval items first
-    $DB->delete_records_select('paper_eval_items', "evalid $insql", $params);
-    
-    // Delete all evaluations
-    $DB->delete_records('paper_evaluations', ['paperid' => $paper->id]);
-    
-    \core\notification::success("All evaluations deleted successfully.");
+if ($hasevaluations) {
+    // Clears the uploaded scans, snippets and debug crops as well as the rows - deleting
+    // only the rows would leave every file behind with nothing referencing it.
+    paper_delete_all_evaluations($paper, context_module::instance($cm->id));
+
+    \core\notification::success(get_string('allevaluationsdeleted', 'mod_paper'));
 } else {
-    \core\notification::info("No evaluations to delete.");
+    \core\notification::info(get_string('noevaluationstodelete', 'mod_paper'));
 }
 
 redirect(new moodle_url('/mod/paper/reports.php', ['id' => $cm->id]));

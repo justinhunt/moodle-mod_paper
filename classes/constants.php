@@ -68,6 +68,32 @@ class constants {
     const M_FONT_NATIVE = 'native';
 
     /**
+     * @var array File areas whose itemid is a paper_eval_items.id.
+     *
+     * Deleting an eval item without clearing these orphans the files - nothing else
+     * references them, and the ids are never reissued.
+     */
+    const M_ITEM_FILEAREAS = [
+        'responsesnippet',  // Display-only area images reproduced on the evaluation.
+        'areacrop',         // Debug crops for the Developer page.
+    ];
+
+    /**
+     * @var array All file areas holding per-submission data, as opposed to activity config.
+     *
+     * M_ITEM_FILEAREAS plus the raw uploaded scan batches, which are keyed by an ephemeral
+     * batch id instead. This is what a course reset clears. 'template' and 'intro' are
+     * deliberately absent - the worksheet and its description survive a reset the same way
+     * paper_response_areas does. 'downloadevaluations' is absent because nothing is stored
+     * there; pdf_processor builds it per request.
+     */
+    const M_USERDATA_FILEAREAS = [
+        'submissions',
+        'responsesnippet',
+        'areacrop',
+    ];
+
+    /**
      * @var string Last-resort font, used when a stored font name is not one we can honour.
      * FreeSerif because it is embedded (so it renders the same in every viewer) and has by far
      * the widest script coverage of the fonts Moodle ships - Arabic, Hebrew, Cyrillic, Greek,

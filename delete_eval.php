@@ -39,9 +39,8 @@ require_sesskey();
 // Ensure the evaluation belongs to this paper instance
 $evaluation = $DB->get_record('paper_evaluations', ['id' => $evalid, 'paperid' => $paper->id], '*', MUST_EXIST);
 
-// Delete the items and the evaluation
-$DB->delete_records('paper_eval_items', ['evalid' => $evaluation->id]);
-$DB->delete_records('paper_evaluations', ['id' => $evaluation->id]);
+// Delete the items, the evaluation, and the snippet/crop files the items own.
+paper_delete_evaluation($evaluation, context_module::instance($cm->id));
 
-\core\notification::success("Evaluation deleted successfully.");
+\core\notification::success(get_string('evaluationdeleted', 'mod_paper'));
 redirect(new moodle_url('/mod/paper/reports.php', ['id' => $cm->id]));

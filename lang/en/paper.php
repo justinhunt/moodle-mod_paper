@@ -344,6 +344,13 @@ $string['previousstudent'] = 'Previous Student';
 $string['nextstudent'] = 'Next Student';
 $string['feedbacklabel'] = 'Feedback: {$a}';
 
+// Course reset and deletion.
+$string['resetevaluations'] = 'Delete all submissions and evaluations';
+$string['resetevaluations_help'] = 'Deletes every scanned submission, evaluation and grade for the Paper activities in this course, including the uploaded scans and cropped images. The worksheet templates and their response area configuration are kept, so the activities are ready to receive a new set of submissions.';
+$string['allevaluationsdeleted'] = 'All evaluations deleted successfully.';
+$string['noevaluationstodelete'] = 'No evaluations to delete.';
+$string['evaluationdeleted'] = 'Evaluation deleted successfully.';
+
 $string['enabledebugfeatures'] = 'Enable debug features for developers';
 $string['enabledebugfeatures_desc'] = 'When enabled, the Developer button appears on the reports page, giving access to tools for inspecting how a submission was processed. Off by default - these are for working on the plugin, not for teaching with. Turning this off also blocks the Developer page itself, not just the button.';
 $string['debugfeaturesdisabled'] = 'Developer tools are turned off for this site. An administrator can enable them with the "Enable debug features for developers" setting in the Paper activity settings.';

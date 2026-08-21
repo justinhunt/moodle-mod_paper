@@ -326,7 +326,9 @@ class submission_processor {
             $this->save_response_snippet(base64_encode(file_get_contents($job->croppath)), $itemid, $job->pad ?? null);
         }
 
-        if (get_config('mod_paper', 'savedebugcrops')) {
+        // The Developer page is the only thing that displays these, so storing them while it
+        // is switched off would just accumulate images nobody can look at.
+        if (utils::debug_features_enabled() && get_config('mod_paper', 'savedebugcrops')) {
             // Kept for every area, display-only included: the snippet copy above is served
             // windowed down to the response area, and the Developer page exists to show
             // what was actually cropped.

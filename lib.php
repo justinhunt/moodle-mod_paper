@@ -86,6 +86,136 @@ function paper_delete_instance($id) {
 }
 
 /**
+ * Deletes one evaluation, its items, and the files those items own.
+ *
+ * @param object $evaluation The paper_evaluations row.
+ * @param object $context The activity's module context.
+ */
+function paper_delete_evaluation($evaluation, $context) {
+    global $DB;
+
+    $fs = get_file_storage();
+    $itemids = $DB->get_fieldset_select('paper_eval_items', 'id', 'evalid = ?', [$evaluation->id]);
+    foreach ($itemids as $itemid) {
+        foreach (\mod_paper\constants::M_ITEM_FILEAREAS as $filearea) {
+            $fs->delete_area_files($context->id, 'mod_paper', $filearea, $itemid);
+        }
+    }
+
+    $DB->delete_records('paper_eval_items', ['evalid' => $evaluation->id]);
+    $DB->delete_records('paper_evaluations', ['id' => $evaluation->id]);
+}
+
+/**
+ * Deletes every submission and evaluation for one paper, files included.
+ *
+ * Shared by the course reset and the "delete all submissions" action, and deliberately does
+ * not touch paper_response_areas or the template image - those are the worksheet's
+ * configuration, not student data, and survive a reset the way the backup treats them.
+ *
+ * @param object $paper The paper instance.
+ * @param object $context The activity's module context.
+ */
+function paper_delete_all_evaluations($paper, $context) {
+    global $DB;
+
+    $evalids = $DB->get_fieldset_select('paper_evaluations', 'id', 'paperid = ?', [$paper->id]);
+    if (!empty($evalids)) {
+        [$insql, $params] = $DB->get_in_or_equal($evalids);
+        $DB->delete_records_select('paper_eval_items', "evalid $insql", $params);
+    }
+    $DB->delete_records('paper_evaluations', ['paperid' => $paper->id]);
+
+    // Files are keyed by eval item or by an ephemeral batch id, so clearing whole areas is
+    // both simpler and safer than trying to walk ids we have just deleted.
+    $fs = get_file_storage();
+    foreach (\mod_paper\constants::M_USERDATA_FILEAREAS as $filearea) {
+        $fs->delete_area_files($context->id, 'mod_paper', $filearea);
+    }
+}
+
+/**
+ * Standard Moodle plugin API: course reset form.
+ *
+ * Without this (and paper_reset_userdata) the activity is listed under "not supported" on the
+ * course reset page and a reset silently leaves every scan and grade in place.
+ */
+function paper_reset_course_form_definition(&$mform) {
+    $mform->addElement('header', 'paperheader', get_string('modulenameplural', 'mod_paper'));
+    $resetlabel = get_string('resetevaluations', 'mod_paper');
+    $mform->addElement('advcheckbox', 'reset_paper_evaluations', $resetlabel);
+    $mform->addHelpButton('reset_paper_evaluations', 'resetevaluations', 'mod_paper');
+}
+
+/**
+ * Standard Moodle plugin API: course reset form defaults.
+ */
+function paper_reset_course_form_defaults($course) {
+    return ['reset_paper_evaluations' => 1];
+}
+
+/**
+ * Standard Moodle plugin API: remove all grades from the gradebook for this course's papers.
+ */
+function paper_reset_gradebook($courseid, $type = '') {
+    global $DB;
+
+    $sql = "SELECT p.*, cm.idnumber AS cmidnumber, p.course AS courseid
+              FROM {paper} p
+              JOIN {course_modules} cm ON cm.instance = p.id
+              JOIN {modules} m ON m.id = cm.module AND m.name = 'paper'
+             WHERE p.course = ?";
+
+    foreach ($DB->get_records_sql($sql, [$courseid]) as $paper) {
+        paper_grade_item_update($paper, 'reset');
+    }
+}
+
+/**
+ * Standard Moodle plugin API: course reset.
+ *
+ * @param object $data The reset form data.
+ * @return array Status lines for the reset report.
+ */
+function paper_reset_userdata($data) {
+    global $DB;
+
+    $status = [];
+
+    if (empty($data->reset_paper_evaluations)) {
+        return $status;
+    }
+
+    $componentstr = get_string('modulenameplural', 'mod_paper');
+
+    foreach ($DB->get_records('paper', ['course' => $data->courseid]) as $paper) {
+        $cm = get_coursemodule_from_instance('paper', $paper->id, $data->courseid, false, IGNORE_MISSING);
+        if (!$cm) {
+            // No course module means no context, so there are no files to clear - but the
+            // rows still have to go, so fall back to deleting just those.
+            $orphansql = 'evalid IN (SELECT id FROM {paper_evaluations} WHERE paperid = ?)';
+            $DB->delete_records_select('paper_eval_items', $orphansql, [$paper->id]);
+            $DB->delete_records('paper_evaluations', ['paperid' => $paper->id]);
+            continue;
+        }
+        paper_delete_all_evaluations($paper, context_module::instance($cm->id));
+    }
+
+    // Skipped when the reset is already clearing all gradebook grades itself.
+    if (empty($data->reset_gradebook_grades)) {
+        paper_reset_gradebook($data->courseid);
+    }
+
+    $status[] = [
+        'component' => $componentstr,
+        'item' => get_string('resetevaluations', 'mod_paper'),
+        'error' => false,
+    ];
+
+    return $status;
+}
+
+/**
  * Define module features
  */
 function paper_supports($feature) {
