@@ -302,5 +302,25 @@ function xmldb_paper_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2024042713, 'paper');
     }
 
+    if ($oldversion < 2024042716) {
+        // The scan alignment offsets were percentages of the page, which nobody could
+        // relate to the crop margin that bounds them - that has always been in millimetres.
+        // They are millimetres now, so convert whatever is stored. A4 is spelled out rather
+        // than read from constants::M_PAGE_*_MM: an upgrade step has to keep meaning what it
+        // meant when it was written, even if the page size becomes configurable later.
+        // The scales are untouched - they are ratios, and stay percentages.
+        $DB->execute("UPDATE {paper} SET alignoffsetx = alignoffsetx * 210 / 100 WHERE alignoffsetx IS NOT NULL");
+        $DB->execute("UPDATE {paper} SET alignoffsety = alignoffsety * 297 / 100 WHERE alignoffsety IS NOT NULL");
+
+        foreach (['alignoffsetx' => 210, 'alignoffsety' => 297] as $name => $pagemm) {
+            $value = get_config('mod_paper', $name);
+            if ($value !== false && $value !== '' && is_numeric($value)) {
+                set_config($name, round((float) $value * $pagemm / 100, 4), 'mod_paper');
+            }
+        }
+
+        upgrade_mod_savepoint(true, 2024042716, 'paper');
+    }
+
     return true;
 }

@@ -707,9 +707,13 @@ class utils {
      * slightly stretched. These four numbers describe that displacement so the crop taken
      * for a display-only area can be shifted back onto the content it was meant to capture.
      *
-     * Offsets are percentages of the page (positive = the scanned content sits further
-     * right/down than the template says); scales are percentages where 100 means no
-     * stretch. A paper leaves any of the four NULL to inherit the site default.
+     * Offsets are millimetres on the printed A4 page (positive = the scanned content sits
+     * further right/down than the template says), which is the unit the teacher enters and
+     * the same unit as the crop margin that bounds them. Scales are percentages where 100
+     * means no stretch - a ratio has no natural millimetre equivalent. The two units are
+     * deliberately different; window_snippet() converts the offsets into page percentages
+     * when it does the arithmetic. A paper leaves any of the four NULL to inherit the site
+     * default.
      *
      * @param object $paper DB row from paper.
      * @return array Associative array with keys offsetx, offsety, scalex, scaley.
@@ -857,8 +861,13 @@ class utils {
             $patchy = (float) $area->box_y + ((float) $item->snippety / 100.0) * $bh;
 
             // Where we want to read from instead, once the scan's drift is accounted for.
-            $winx = $alignment['offsetx'] + ($alignment['scalex'] / 100.0) * (float) $area->box_x;
-            $winy = $alignment['offsety'] + ($alignment['scaley'] / 100.0) * (float) $area->box_y;
+            // The offsets are stored in millimetres because that is the unit a teacher can
+            // measure against a print-out; everything here is in page percentages, so they
+            // are converted once, on the way in.
+            $offsetx = ($alignment['offsetx'] / constants::M_PAGE_W_MM) * 100.0;
+            $offsety = ($alignment['offsety'] / constants::M_PAGE_H_MM) * 100.0;
+            $winx = $offsetx + ($alignment['scalex'] / 100.0) * (float) $area->box_x;
+            $winy = $offsety + ($alignment['scaley'] / 100.0) * (float) $area->box_y;
             $winw = ($alignment['scalex'] / 100.0) * $bw;
             $winh = ($alignment['scaley'] / 100.0) * $bh;
 

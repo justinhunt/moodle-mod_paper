@@ -73,6 +73,10 @@ All tables use the `paper_` prefix:
 | `feedbacklanguagefont` | VARCHAR(50) | Font used for feedback text (default `freeserif`) |
 | `grade` | INT(10) | Maximum grade (default 100) |
 | `showtotalscore` | INT(2) | Flag (0/1) whether to print total score on evaluation |
+| `alignoffsetx` | NUMBER(10,4) | Scan alignment horizontal offset, **millimetres**. NULL inherits the site default |
+| `alignoffsety` | NUMBER(10,4) | Scan alignment vertical offset, **millimetres**. NULL inherits the site default |
+| `alignscalex` | NUMBER(10,4) | Scan alignment horizontal scale, **percent** (100 = no stretch). NULL inherits the site default |
+| `alignscaley` | NUMBER(10,4) | Scan alignment vertical scale, **percent** (100 = no stretch). NULL inherits the site default |
 
 ### `mdl_paper_response_areas` (Template Bounding Boxes & Prompts)
 | Field | Type | Description |
@@ -320,6 +324,17 @@ page rather than to `reports.php` so the teacher can iterate without leaving. Th
 evaluation rides along on every redirect as `previewevalid`. `alignment.js` swaps the frame
 `src` when the student selector changes and appends a `cachebust` parameter, since a browser's
 PDF viewer will otherwise happily re-show what it already has for an unchanged URL.
+
+**Units — the four values are not all in the same one.** The offsets are millimetres on the
+printed A4 page, so they can be compared with the `croppadmm` margin that bounds them and
+measured against a print-out with a ruler; the scales are percentages, because a ratio has no
+millimetre equivalent. Everything downstream of the settings works in page percentages, so
+`utils::window_snippet()` converts the offsets via `constants::M_PAGE_W_MM`/`M_PAGE_H_MM`, and
+`alignment_detector::detect()` converts its fit back the other way before reporting. Those are
+the only two conversion points — `utils::get_scan_alignment()` returns storage units unchanged.
+The offsets were originally page percentages (upgrade step `2024042716` converted them), which
+was unusable in practice: the same "1%" meant 2.1mm across and 3mm down, and neither could be
+compared with a margin quoted in millimetres.
 
 ---
 

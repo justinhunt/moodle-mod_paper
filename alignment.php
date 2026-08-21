@@ -105,10 +105,13 @@ $mform = new \mod_paper\form\alignment_form($thisurl->out(false), ['sitedefaults
 if ($detection !== null) {
     // Offered as a suggestion in the form, not written to the database - the teacher
     // reviews the numbers and saves them, or discards them by navigating away.
+    // Offsets are rounded to a hundredth of a millimetre before being offered: the scan is
+    // 150dpi, so a pixel is already 0.17mm, and anything finer is noise the teacher would
+    // have to read past.
     $mform->set_data([
         'id' => $cm->id,
-        'alignoffsetx' => $detection['offsetx'],
-        'alignoffsety' => $detection['offsety'],
+        'alignoffsetx' => round($detection['offsetx'], 2),
+        'alignoffsety' => round($detection['offsety'], 2),
         'alignscalex' => $detection['scalex'],
         'alignscaley' => $detection['scaley'],
     ]);
@@ -195,8 +198,8 @@ if ($detection !== null) {
     };
 
     $templatecontext['detection'] = [
-        'offsetx' => format_float($detection['offsetx'], 4, true, true),
-        'offsety' => format_float($detection['offsety'], 4, true, true),
+        'offsetx' => format_float($detection['offsetx'], 2, true, true),
+        'offsety' => format_float($detection['offsety'], 2, true, true),
         'scalex' => format_float($detection['scalex'], 4, true, true),
         'scaley' => format_float($detection['scaley'], 4, true, true),
         'bandsx' => $bands($detection['bandsx']),

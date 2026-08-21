@@ -47,19 +47,24 @@ class alignment_form extends \moodleform {
         $mform->addElement('hidden', 'id');
         $mform->setType('id', PARAM_INT);
 
+        // The two kinds of field are in genuinely different units - offsets are a distance
+        // on the page, scales are a ratio - so each one carries its own suffix and its own
+        // precision. A millimetre figure to four decimal places would suggest an accuracy
+        // that print and scan hardware cannot deliver.
         $fields = [
-            'alignoffsetx' => 'offsetx',
-            'alignoffsety' => 'offsety',
-            'alignscalex' => 'scalex',
-            'alignscaley' => 'scaley',
+            'alignoffsetx' => ['key' => 'offsetx', 'unit' => 'mm', 'decimals' => 2],
+            'alignoffsety' => ['key' => 'offsety', 'unit' => 'mm', 'decimals' => 2],
+            'alignscalex' => ['key' => 'scalex', 'unit' => '%', 'decimals' => 4],
+            'alignscaley' => ['key' => 'scaley', 'unit' => '%', 'decimals' => 4],
         ];
 
-        foreach ($fields as $name => $key) {
+        foreach ($fields as $name => $field) {
             $mform->addElement('text', $name, get_string($name, 'mod_paper'), ['size' => 10]);
             $mform->setType($name, PARAM_RAW_TRIMMED);
             $mform->addHelpButton($name, $name, 'mod_paper');
+            $inherited = format_float($defaults[$field['key']], $field['decimals'], true, true) . $field['unit'];
             $mform->addElement('static', $name . '_inherited', '',
-                get_string('alignmentinherited', 'mod_paper', format_float($defaults[$key], 4, true, true)));
+                get_string('alignmentinherited', 'mod_paper', $inherited));
         }
 
         $this->add_action_buttons();

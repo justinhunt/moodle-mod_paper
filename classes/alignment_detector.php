@@ -80,7 +80,8 @@ class alignment_detector {
      * Measures the alignment of the retained scan page against the template.
      *
      * @return array|null Null if there is nothing to measure. Otherwise keys:
-     *                    offsetx, offsety, scalex, scaley - the suggested values;
+     *                    offsetx, offsety - the suggested offsets, in millimetres;
+     *                    scalex, scaley - the suggested scales, as percentages;
      *                    bandsx, bandsy - per-band displacements in pixels, for display;
      *                    reliablex, reliabley - whether each axis produced a consistent
      *                    trend, since a page can pin one direction and not the other.
@@ -124,10 +125,12 @@ class alignment_detector {
 
         // A band's displacement d is where the scan sits relative to the template, so
         // fitting d against position gives exactly the offset/scale pair the renderer
-        // wants: window = offset + (scale/100) * box.
+        // wants: window = offset + (scale/100) * box. fit_axis() works in page percentages;
+        // the offsets are reported in millimetres, which is what the settings store and
+        // what the teacher sees.
         return [
-            'offsetx' => round($result['x']['offset'], 4),
-            'offsety' => round($result['y']['offset'], 4),
+            'offsetx' => round($result['x']['offset'] / 100 * \mod_paper\constants::M_PAGE_W_MM, 4),
+            'offsety' => round($result['y']['offset'] / 100 * \mod_paper\constants::M_PAGE_H_MM, 4),
             'scalex' => round($result['x']['scale'], 4),
             'scaley' => round($result['y']['scale'], 4),
             'bandsx' => $result['x']['bands'],
