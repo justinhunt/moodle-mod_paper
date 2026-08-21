@@ -510,6 +510,57 @@ class utils {
     }
 
     /**
+     * Is this a standard response area, i.e. one the AI corrects, comments on and grades?
+     *
+     * This is the check behind almost every piece of AI output: correction diffs, feedback
+     * text, item grades and the maximum-grade totals all apply to these areas and no others.
+     *
+     * @param object $area DB row from paper_response_areas.
+     * @return bool
+     */
+    public static function is_graded_area(object $area): bool {
+        return (int)$area->areatype === constants::M_AREATYPE_GRADED;
+    }
+
+    /**
+     * Does this area capture the student's identity, rather than a response?
+     *
+     * Covers both the free-text name field and the Moodle username field. Their text is
+     * bottom-aligned when printed (it sits on a ruled line on the worksheet) and is kept in
+     * paper_evaluations.studentnametext rather than being treated as an answer.
+     *
+     * @param object $area DB row from paper_response_areas.
+     * @return bool
+     */
+    public static function is_name_area(object $area): bool {
+        $areatype = (int)$area->areatype;
+        return $areatype === constants::M_AREATYPE_NAME || $areatype === constants::M_AREATYPE_USERNAME;
+    }
+
+    /**
+     * Is this area reproduced as an image of the student's handwriting instead of being read?
+     *
+     * @param object $area DB row from paper_response_areas.
+     * @return bool
+     */
+    public static function is_displayonly_area(object $area): bool {
+        return (int)$area->areatype === constants::M_AREATYPE_DISPLAYONLY;
+    }
+
+    /**
+     * Should this area's crop be sent for OCR?
+     *
+     * Every area type except display-only has its handwriting read back as text - what
+     * differs afterwards is how much is done with that text.
+     *
+     * @param object $area DB row from paper_response_areas.
+     * @return bool
+     */
+    public static function has_ocr_text(object $area): bool {
+        return !self::is_displayonly_area($area);
+    }
+
+    /**
      * Returns the effective feedback box coordinates for a response area.
      * When fb_x/y/w/h are all zero (unset), defaults to the bottom 30% of
      * the response area — same width, positioned at 70% down from the top.

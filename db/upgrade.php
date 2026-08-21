@@ -267,5 +267,19 @@ function xmldb_paper_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2024042710, 'paper');
     }
 
+    if ($oldversion < 2024042711) {
+        // The area role marker started life as a boolean and grew into an enum, so its name
+        // stopped describing its contents. No data migration - the stored integers keep the
+        // meanings they already had, and "ungraded" is a new value nothing uses yet.
+        $table = new xmldb_table('paper_response_areas');
+        $field = new xmldb_field('isnamefield', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0', 'responsenumber');
+
+        if ($dbman->field_exists($table, $field)) {
+            $dbman->rename_field($table, $field, 'areatype');
+        }
+
+        upgrade_mod_savepoint(true, 2024042711, 'paper');
+    }
+
     return true;
 }

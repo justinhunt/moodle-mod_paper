@@ -10,29 +10,54 @@ This plugin has no `tests/` directory yet (no PHPUnit coverage) and is at `MATUR
 
 ## Commands
 
-All commands are run from the Moodle root (`/home/ubuntu/moodles/m51`), not from this plugin directory, since they rely on Moodle core CLI/build tooling.
+This site runs in Docker, so anything needing the database must go through the webserver
+container — the host shell has no route to the `db` host and none of the `MOODLE_DOCKER_*`
+env vars that `config.php` reads. Inside the container the Moodle root is `/var/www/html`.
+Build/lint tooling has no such requirement and runs on the host from `/home/ubuntu/moodles/m51`.
+
+Note the directory layout: `dirroot` is `public/`, but `admin/cli/` deliberately sits
+*outside* it (Moodle 5.x keeps CLI scripts out of the docroot). So it is `admin/cli/…` and
+`public/admin/tool/…` — not `public/admin/cli/…`, which does not exist.
 
 ```bash
-# Run the two adhoc tasks manually instead of waiting for cron
-php public/admin/cli/adhoc_task.php --execute=\\mod_paper\\task\\process_submissions_task
-php public/admin/cli/adhoc_task.php --execute=\\mod_paper\\task\\evaluate_submissions_task
-
-# Rebuild AMD JS after editing amd/src/*.js (setup.js, view_eval.js, reports.js)
-npx grunt amd --components=mod_paper
+# Run the two adhoc tasks manually instead of waiting for cron.
+# Use --classname, NOT --execute=<class>: --execute is a valueless boolean flag, so passing
+# a class to it casts to true and runs EVERY queued adhoc task on the site. --classname
+# implies --execute and scopes the run to that task.
+docker exec moodle51-webserver-1 php /var/www/html/admin/cli/adhoc_task.php \
+    --classname='\mod_paper\task\process_submissions_task'
+docker exec moodle51-webserver-1 php /var/www/html/admin/cli/adhoc_task.php \
+    --classname='\mod_paper\task\evaluate_submissions_task'
 
 # Purge caches (needed after changing lib.php, settings.php, templates, lang strings)
-php public/admin/cli/purge_caches.php
+docker exec moodle51-webserver-1 php /var/www/html/admin/cli/purge_caches.php
 
 # After changing db/install.xml or adding a db/upgrade.php step: bump version.php then
-php public/admin/cli/upgrade.php --non-interactive
+docker exec moodle51-webserver-1 php /var/www/html/admin/cli/upgrade.php --non-interactive
 
-# PHP coding standard (Moodle ruleset, configured at repo root via phpcs.xml.dist)
-vendor/bin/phpcs public/mod/paper
+# Rebuild AMD JS after editing amd/src/*.js (constants.js, setup.js, view_eval.js, reports.js).
+# Run on the host. Do NOT use `npx` - it resolves to the Windows Node over WSL interop and
+# fails on the UNC path. --force is needed to get past an unrelated ignorefiles warning about
+# a missing local/codechecker PHPCompatibility path.
+node node_modules/.bin/grunt amd --components=mod_paper --force
 
-# PHPUnit (no plugin-specific tests currently exist)
-php public/admin/tool/phpunit/cli/init.php   # one-time environment init
-vendor/bin/phpunit --filter <TestName> path/to/test.php
+# --components does not scope eslint (it lints the whole tree), so to lint just this plugin:
+node node_modules/.bin/eslint public/mod/paper/amd/src/
+
+# PHP coding standard (Moodle ruleset, configured at repo root via phpcs.xml.dist).
+# phpcs is NOT in the root vendor/bin - Moodle core does not depend on it. The binary comes
+# from the local_codechecker plugin, which bundles moodlehq/moodle-cs and registers the
+# "moodle" standard that phpcs.xml.dist refers to. Runs on the host.
+public/local/codechecker/vendor/bin/phpcs public/mod/paper
+
+# PHPUnit (no plugin-specific tests currently exist). Needs the DB, so runs in the container.
+docker exec moodle51-webserver-1 php /var/www/html/public/admin/tool/phpunit/cli/init.php
+docker exec moodle51-webserver-1 /var/www/html/vendor/bin/phpunit --filter <TestName> path/to/test.php
 ```
+
+For one-off inspection scripts, write the file locally, `docker cp` it to `/tmp` in the
+webserver container, run it, then delete it. Such scripts need `define('CLI_SCRIPT', true);`
+before requiring `/var/www/html/config.php`.
 
 ## Architecture
 
@@ -52,6 +77,7 @@ Submission processing is deliberately split into two separate adhoc tasks so a t
 ### Template setup vs. rendering
 
 - **Setup** (`setup.php` + `amd/src/setup.js`): HTML5 canvas over the blank worksheet image. Each response area has two independent bounding boxes stored in `mdl_paper_response_areas`: `box_*` (red — where OCR reads student handwriting) and `fb_*` (feedback box — where corrections/feedback get printed on the output PDF). If `fb_*` is unset, `utils::get_effective_feedback_box()` derives a default position from `box_*`.
+- **Area types** live in `mdl_paper_response_areas.areatype` (graded / name / username / display-only / ungraded). Never compare it to a raw integer: the values are `mod_paper\constants::M_AREATYPE_*` and the checks are `utils::is_graded_area()`, `is_name_area()`, `is_displayonly_area()` and `has_ocr_text()`. `DEVELOPER.md` documents what each type does.
 - **Grading config per response area** is split into three independent modes, not one: `correctanswermode` (none/exactly/relevant/samemeaning), `grammarcorrections` (no/major/all), `feedbackmode` (none/grammatical/custom), `gradingmode` (none/incorrect/overall) — each with its own instructions field. Don't conflate these when adding UI or prompt logic.
 - **Rendering** (`classes/pdf_processor.php`): loads the original worksheet image as a TCPDF background and writes corrected text/feedback into the `fb_*` boxes using the per-activity `targetlanguagefont`/`feedbacklanguagefont`. `classes/diff.php` computes the word-level diff (`classes/utils.php` formats it as `paper_del`/`paper_ins` spans) used both in the web review UI and the printed PDF.
 

@@ -20,7 +20,7 @@
  * @copyright  2024 Justin Hunt <poodllsupport@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-define(['jquery', 'core/log', 'core/str'], function($, log, Str) {
+define(['jquery', 'core/log', 'core/str', 'mod_paper/constants'], function($, log, Str, constants) {
     "use strict";
 
     var component = 'mod_paper';
@@ -175,15 +175,15 @@ define(['jquery', 'core/log', 'core/str'], function($, log, Str) {
             });
 
             // Toggle all fields based on role selection.
-            $('#setup-form').on('change', '.namefield-radio', function() {
-                var val = $(this).val();
-                if (val === '0') {
-                    $(this).closest('.area-card').find('.standard-fields-wrapper').show();
+            $('#setup-form').on('change', '.areatype-radio', function() {
+                var wrapper = $(this).closest('.area-card').find('.standard-fields-wrapper');
+                if (Number($(this).val()) === constants.AREATYPE_GRADED) {
+                    wrapper.show();
                 } else {
-                    $(this).closest('.area-card').find('.standard-fields-wrapper').hide();
+                    wrapper.hide();
                 }
             });
-            $('.namefield-radio:checked').trigger('change');
+            $('.areatype-radio:checked').trigger('change');
 
             // Delete area.
             $('#setup-form').on('click', '.btn-trash-area', function() {
@@ -260,7 +260,7 @@ define(['jquery', 'core/log', 'core/str'], function($, log, Str) {
                         }
                     });
                     // Set some defaults.
-                    newCard.find('input[name*="[namefieldtype]"][value="0"]').prop('checked', true);
+                    newCard.find('input[name^="areatype["][value="' + constants.AREATYPE_GRADED + '"]').prop('checked', true);
                     newCard.find('input[name*="[grammarcorrections]"][value="major"]').prop('checked', true);
                     newCard.find('input[name*="[feedbackmode]"][value="none"]').prop('checked', true);
                     newCard.find('input[name*="[gradingmode]"][value="none"]').prop('checked', true);
@@ -370,7 +370,8 @@ define(['jquery', 'core/log', 'core/str'], function($, log, Str) {
                                 }
                             });
                             // Set defaults.
-                            newCard.find('input[name*="[namefieldtype]"][value="0"]').prop('checked', true);
+                            newCard.find('input[name^="areatype["][value="' + constants.AREATYPE_GRADED + '"]')
+                                .prop('checked', true);
                             newCard.find('input[name*="[grammarcorrections]"][value="major"]').prop('checked', true);
                             newCard.find('input[name*="[feedbackmode]"][value="none"]').prop('checked', true);
                             newCard.find('input[name*="[gradingmode]"][value="none"]').prop('checked', true);
@@ -664,10 +665,13 @@ define(['jquery', 'core/log', 'core/str'], function($, log, Str) {
                 totalAreas++;
                 var areaId = $(this).data('area-id');
                 var questionVal = $(this).find('textarea[name^="question"]').val() || '';
-                var nftVal = $(this).find('.namefield-radio:checked').val();
-                var isNameField = (nftVal === '1' || nftVal === '2' || nftVal === '3');
+                var areaTypeVal = $(this).find('.areatype-radio:checked').val();
+                // Only a standard graded area needs a question to count as configured; every
+                // other type is fully described by the role itself.
+                var needsQuestion = areaTypeVal === undefined
+                    || Number(areaTypeVal) === constants.AREATYPE_GRADED;
 
-                var isConfigured = (questionVal.trim() !== '') || isNameField;
+                var isConfigured = !needsQuestion || questionVal.trim() !== '';
                 if (isConfigured) {
                     configuredAreas++;
                 }

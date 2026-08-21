@@ -274,7 +274,7 @@ class pdf_processor {
         $maxpossible = 0;
         $hasgradeareas = false;
         foreach ($areas as $area) {
-            if (!$area->isnamefield) {
+            if (utils::is_graded_area($area)) {
                 $maxpossible += $area->maxgrade;
                 if (($area->gradingmode ?? 'none') !== 'none') {
                     $hasgradeareas = true;
@@ -315,7 +315,7 @@ class pdf_processor {
                 $grade = $item ? $item->itemgrade : null;
 
                 // Handle name field fallback
-                if ($area->isnamefield && !$item) {
+                if (utils::is_name_area($area) && !$item) {
                     $ocr = $eval->studentnametext ?? '';
                     $corrected = $ocr;
                 }
@@ -332,7 +332,7 @@ class pdf_processor {
                 
                 $displaytext = ($corrected !== '') ? $corrected : $ocr;
 
-                if ($area->isnamefield == 3) {
+                if (utils::is_displayonly_area($area)) {
                     // Display Only: Show the original image snippet
                     if ($item) {
                         $snippetfile = $fs->get_file($context->id, 'mod_paper', 'responsesnippet', $item->id, '/', 'snippet.jpg');
@@ -355,7 +355,7 @@ class pdf_processor {
                         }
                     }
                 } else if ($displaytext !== '') {
-                    if ($corrected !== '' && $area->grammarcorrections !== 'no' && !$area->isnamefield) {
+                    if ($corrected !== '' && $area->grammarcorrections !== 'no' && utils::is_graded_area($area)) {
                         $html = \mod_paper\utils::build_combined_diff($ocr, $corrected, true);
                     } else {
                         $html = htmlspecialchars($displaytext);
@@ -365,7 +365,7 @@ class pdf_processor {
                     $studentfont = $paper->targetlanguagefont ?? 'courier';
                     $pdf->SetFont($studentfont, '', 12);
                     
-                    if ($area->isnamefield) {
+                    if (utils::is_name_area($area)) {
                         // Manual vertical alignment since TCPDF doesn't support it for HTML.
                         $pdf->startTransaction();
                         // Use 0,0 to avoid page break issues during measurement.
@@ -381,7 +381,7 @@ class pdf_processor {
                 }
 
                 // Render feedback in its dedicated feedback area (independent of display text).
-                if (!empty($feedback) && !$area->isnamefield && ($area->feedbackmode ?? 'none') !== 'none') {
+                if (!empty($feedback) && utils::is_graded_area($area) && ($area->feedbackmode ?? 'none') !== 'none') {
                     $feedbackfont = $paper->feedbacklanguagefont ?? 'freesans';
                     $pdf->SetFont($feedbackfont, '', 11);
                     $pdf->SetTextColor(0, 0, 0);
@@ -398,7 +398,7 @@ class pdf_processor {
                 }
 
                 // Add item grade to the top right of the area (shifted outside).
-                if ($grade !== null && !$area->isnamefield && ($area->gradingmode ?? 'none') !== 'none') {
+                if ($grade !== null && utils::is_graded_area($area) && ($area->gradingmode ?? 'none') !== 'none') {
                     $pdf->SetFont('freesans', 'B', 20);
                     $pdf->SetTextColor(0, 128, 0); // Green.
                     $grade_text = (round($grade, 2) + 0);

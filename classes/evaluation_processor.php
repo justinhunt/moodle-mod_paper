@@ -150,10 +150,13 @@ class evaluation_processor {
                 JOIN {paper_evaluations} pe ON pe.id = pei.evalid
                 JOIN {paper_response_areas} pra ON pra.id = pei.responseareaid
                 WHERE pe.paperid = :paperid
-                  AND pra.isnamefield = 0
+                  AND pra.areatype = :graded
                   AND (pei.correctedtext IS NULL OR pei.itemgrade IS NULL)";
 
-        return $DB->get_records_sql($sql, ['paperid' => $this->paper->id]);
+        return $DB->get_records_sql($sql, [
+            'paperid' => $this->paper->id,
+            'graded' => constants::M_AREATYPE_GRADED,
+        ]);
     }
 
     /**

@@ -25,6 +25,8 @@
 require('../../config.php');
 require_once('lib.php');
 
+use mod_paper\constants;
+
 $id = required_param('id', PARAM_INT); // Course module ID
 
 $cm = get_coursemodule_from_id('paper', $id, 0, false, MUST_EXIST);
@@ -56,8 +58,8 @@ $templatecontext = [
 // Check if any gradable areas exist for this paper (gradingmode != 'none').
 $hasgradeareas = $DB->record_exists_select(
     'paper_response_areas',
-    "paperid = :paperid AND isnamefield = 0 AND gradingmode != 'none'",
-    ['paperid' => $paper->id]
+    "paperid = :paperid AND areatype = :graded AND gradingmode != 'none'",
+    ['paperid' => $paper->id, 'graded' => constants::M_AREATYPE_GRADED]
 );
 
 if (!empty($evaluations)) {
@@ -70,8 +72,9 @@ if (!empty($evaluations)) {
         $sql = "SELECT COUNT(pei.id)
                 FROM {paper_eval_items} pei
                 JOIN {paper_response_areas} pra ON pra.id = pei.responseareaid
-                WHERE pei.evalid = :evalid AND pra.isnamefield = 0 AND pei.itemgrade IS NULL";
-        $pendingcount = $DB->count_records_sql($sql, ['evalid' => $eval->id]);
+                WHERE pei.evalid = :evalid AND pra.areatype = :graded AND pei.itemgrade IS NULL";
+        $pendingparams = ['evalid' => $eval->id, 'graded' => constants::M_AREATYPE_GRADED];
+        $pendingcount = $DB->count_records_sql($sql, $pendingparams);
 
         $actions = [];
         if ($pendingcount == 0) {

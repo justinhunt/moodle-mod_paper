@@ -68,6 +68,14 @@ class restore_paper_activity_structure_step extends restore_activity_structure_s
 
         $data->paperid = $this->get_new_parentid('paper');
 
+        // Backups taken before the field was renamed carry isnamefield. The values it held
+        // are the same ones areatype uses, so carry it across rather than let insert_record
+        // silently drop the unknown column and default every area to standard.
+        if (isset($data->isnamefield) && !isset($data->areatype)) {
+            $data->areatype = $data->isnamefield;
+            unset($data->isnamefield);
+        }
+
         $newitemid = $DB->insert_record('paper_response_areas', $data);
         $this->set_mapping('paper_response_area', $oldid, $newitemid);
     }

@@ -44,7 +44,7 @@ class backup_paper_activity_structure_step extends backup_activity_structure_ste
         $responseareas = new backup_nested_element('response_areas');
 
         $responsearea = new backup_nested_element('response_area', ['id'], [
-            'responsenumber', 'isnamefield',
+            'responsenumber', 'areatype',
             'box_x', 'box_y', 'box_w', 'box_h',
             'fb_x', 'fb_y', 'fb_w', 'fb_h',
             'question', 'correctanswer', 'correctanswermode',

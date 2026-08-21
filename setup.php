@@ -25,6 +25,9 @@
 require('../../config.php');
 require_once('lib.php');
 
+use mod_paper\constants;
+use mod_paper\utils;
+
 $id = required_param('id', PARAM_INT); // Course module ID
 
 $cm = get_coursemodule_from_id('paper', $id, 0, false, MUST_EXIST);
@@ -41,7 +44,7 @@ $PAGE->set_heading(format_string($course->fullname));
 // Handle form submission to save response areas
 if ($_POST && isset($_POST['sesskey']) && confirm_sesskey() && empty($_FILES['templateimage'])) {
     $areas = $DB->get_records('paper_response_areas', ['paperid' => $paper->id]);
-    $nft = optional_param_array('namefieldtype', [], PARAM_INT);
+    $submittedareatypes = optional_param_array('areatype', [], PARAM_INT);
     
     $questions = optional_param_array('question', [], PARAM_RAW);
     $correctanswers = optional_param_array('correctanswer', [], PARAM_RAW);
@@ -79,16 +82,11 @@ if ($_POST && isset($_POST['sesskey']) && confirm_sesskey() && empty($_FILES['te
         $record->paperid = $paper->id;
         $record->responsenumber = $responsenumber++;
         
-        $type = $nft[$post_id] ?? 0;
-        if ($type == 1) {
-            $record->isnamefield = 1;
-        } elseif ($type == 2) {
-            $record->isnamefield = 2;
-        } elseif ($type == 3) {
-            $record->isnamefield = 3;
-        } else {
-            $record->isnamefield = 0;
-        }
+        // Anything not offered by the radio group falls back to a standard graded area.
+        $type = (int)($submittedareatypes[$post_id] ?? constants::M_AREATYPE_GRADED);
+        $record->areatype = in_array($type, constants::M_AREATYPES, true)
+            ? $type
+            : constants::M_AREATYPE_GRADED;
         $record->question = $question;
         $record->correctanswer = $correctanswers[$post_id] ?? '';
         $record->correctanswermode = $cam[$post_id] ?? 'none';
@@ -185,7 +183,8 @@ if (isset($_FILES['templateimage']) && $_FILES['templateimage']['error'] === UPL
             $record = new stdClass();
             $record->paperid = $paper->id;
             $record->responsenumber = $index + 1;
-            $record->isnamefield = ($index === 0) ? 1 : 0; // default first one
+            // Default the first detected area to the student name field.
+            $record->areatype = ($index === 0) ? constants::M_AREATYPE_NAME : constants::M_AREATYPE_GRADED;
             
             if (isset($area->xmin)) {
                 $record->box_x = $area->xmin / 10;
@@ -248,11 +247,14 @@ if (!empty($areas)) {
             'fb_y' => (float)$area->fb_y,
             'fb_w' => (float)$area->fb_w,
             'fb_h' => (float)$area->fb_h,
-            'isnamefield' => $area->isnamefield,
-            'namefield_standard' => ($area->isnamefield == 0),
-            'namefield_fullname' => ($area->isnamefield == 1),
-            'namefield_username' => ($area->isnamefield == 2),
-            'namefield_displayonly' => ($area->isnamefield == 3),
+            'areatype' => $area->areatype,
+            'areatype_graded' => utils::is_graded_area($area),
+            'areatype_name' => ($area->areatype == constants::M_AREATYPE_NAME),
+            'areatype_username' => ($area->areatype == constants::M_AREATYPE_USERNAME),
+            'areatype_displayonly' => utils::is_displayonly_area($area),
+            'areatype_ungraded' => ($area->areatype == constants::M_AREATYPE_UNGRADED),
+            // The question/answer/grading fieldsets only apply to a standard graded area.
+            'hidestandardfields' => !utils::is_graded_area($area),
             'question' => $area->question,
             'correctanswer' => $area->correctanswer,
             'correctanswermode' => $area->correctanswermode,

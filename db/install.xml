@@ -38,7 +38,7 @@
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="true"/>
         <FIELD NAME="paperid" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false"/>
         <FIELD NAME="responsenumber" TYPE="int" LENGTH="10" NOTNULL="true" UNSIGNED="true" SEQUENCE="false"/>
-        <FIELD NAME="isnamefield" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="areatype" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Role of this area: 0 standard graded response, 1 student name, 2 Moodle username, 3 display only (image snippet, no OCR), 4 ungraded (OCR only, no AI processing). See mod_paper\constants::M_AREATYPE_*."/>
         <FIELD NAME="box_x" TYPE="number" LENGTH="10" NOTNULL="true" DECIMALS="2" SEQUENCE="false"/>
         <FIELD NAME="box_y" TYPE="number" LENGTH="10" NOTNULL="true" DECIMALS="2" SEQUENCE="false"/>
         <FIELD NAME="box_w" TYPE="number" LENGTH="10" NOTNULL="true" DECIMALS="2" SEQUENCE="false"/>

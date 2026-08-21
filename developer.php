@@ -28,6 +28,9 @@
 require('../../config.php');
 require_once('lib.php');
 
+use mod_paper\constants;
+use mod_paper\utils;
+
 $id = required_param('id', PARAM_INT); // Course module ID.
 $evalid = optional_param('evalid', 0, PARAM_INT);
 
@@ -78,10 +81,11 @@ if ($evalid > 0) {
 
     $fs = get_file_storage();
     $areatypestrings = [
-        0 => get_string('areatype_response', 'mod_paper'),
-        1 => get_string('areatype_name', 'mod_paper'),
-        2 => get_string('areatype_username', 'mod_paper'),
-        3 => get_string('areatype_displayonly', 'mod_paper'),
+        constants::M_AREATYPE_GRADED => get_string('areatype_response', 'mod_paper'),
+        constants::M_AREATYPE_NAME => get_string('areatype_name', 'mod_paper'),
+        constants::M_AREATYPE_USERNAME => get_string('areatype_username', 'mod_paper'),
+        constants::M_AREATYPE_DISPLAYONLY => get_string('areatype_displayonly', 'mod_paper'),
+        constants::M_AREATYPE_UNGRADED => get_string('areatype_ungraded', 'mod_paper'),
     ];
 
     foreach ($areas as $area) {
@@ -93,7 +97,7 @@ if ($evalid > 0) {
             // display-only area's snippet is served windowed down to the response area.
             // Older submissions predate the debug crop, so fall back to the snippet.
             $candidates = [['areacrop', 'crop.jpg']];
-            if ($area->isnamefield == 3) {
+            if (utils::is_displayonly_area($area)) {
                 $candidates[] = ['responsesnippet', 'snippet.jpg'];
             }
 
@@ -109,7 +113,7 @@ if ($evalid > 0) {
 
         $templatecontext['areas'][] = [
             'responsenumber' => $area->responsenumber,
-            'areatype' => $areatypestrings[$area->isnamefield] ?? $area->isnamefield,
+            'areatype' => $areatypestrings[$area->areatype] ?? $area->areatype,
             'imageurl' => $imageurl,
         ];
     }

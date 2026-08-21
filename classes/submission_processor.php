@@ -178,7 +178,7 @@ class submission_processor {
                         // the box - on a tightly drawn name field that means the surrounding
                         // parentheses come back as part of the student's name, which then
                         // fails to match a username.
-                        $pad = ($area->isnamefield == 3) ? $this->get_padded_box($area) : null;
+                        $pad = utils::is_displayonly_area($area) ? $this->get_padded_box($area) : null;
                         $cropbox = $pad ? $pad['box'] : $area;
 
                         $croppath = $tempdir . '/crop_' . $pageindex . '_' . $area->id . '.' . $ext;
@@ -217,7 +217,7 @@ class submission_processor {
     protected function run_ocr_jobs(array $jobs) {
         $crops = [];
         foreach ($jobs as $i => $job) {
-            if ($job->area->isnamefield == 3) {
+            if (!utils::has_ocr_text($job->area)) {
                 continue;
             }
             // Deferred so the crop is only read off disk when its request is actually sent.
@@ -268,7 +268,7 @@ class submission_processor {
 
             // Display-only areas are never sent for OCR, so having no result is expected
             // for them and only for them - anywhere else a missing result is a failure.
-            if ($job->area->isnamefield == 3) {
+            if (!utils::has_ocr_text($job->area)) {
                 $result = ['text' => '', 'error' => null];
             } else {
                 $result = $ocrresults[$i] ?? ['text' => null, 'error' => 'no response'];
@@ -307,7 +307,7 @@ class submission_processor {
 
         $area = $job->area;
 
-        if (($area->isnamefield == 1 || $area->isnamefield == 2) && !empty($ocrtext)) {
+        if (utils::is_name_area($area) && !empty($ocrtext)) {
             $this->apply_name_field($area, $ocrtext, $evalid);
         }
 
@@ -322,7 +322,7 @@ class submission_processor {
 
         $itemid = $DB->insert_record('paper_eval_items', $item);
 
-        if ($area->isnamefield == 3) {
+        if (utils::is_displayonly_area($area)) {
             $this->save_response_snippet(base64_encode(file_get_contents($job->croppath)), $itemid, $job->pad ?? null);
         }
 
@@ -411,11 +411,11 @@ class submission_processor {
         $croppath = $tempdir . '/crop_single_' . $area->id;
 
         // Padded only for display-only areas - see build_crop_jobs().
-        $pad = ($area->isnamefield == 3) ? $this->get_padded_box($area) : null;
+        $pad = utils::is_displayonly_area($area) ? $this->get_padded_box($area) : null;
         $croppedbase64 = $this->pdfprocessor->crop_image_to_base64($imagepath, $pad ? $pad['box'] : $area);
         file_put_contents($croppath, base64_decode($croppedbase64));
 
-        if ($area->isnamefield == 3) {
+        if (!utils::has_ocr_text($area)) {
             // Display-only areas show the response snippet image, not OCR'd text, and
             // nothing downstream reads ocrtext for them - skip the AI OCR call.
             $ocrtext = '';
@@ -551,7 +551,7 @@ class submission_processor {
      * Records OCR'd name-field text against the in-progress evaluation, and matches it
      * to a Moodle user account when the area is a username field.
      *
-     * @param object $area A paper_response_areas record with isnamefield 1 (name) or 2 (username).
+     * @param object $area A paper_response_areas record with areatype name or username.
      * @param string $ocrtext The OCR'd text for this area.
      * @param int $evalid The evaluation to update.
      */
@@ -560,7 +560,7 @@ class submission_processor {
 
         $DB->set_field('paper_evaluations', 'studentnametext', $ocrtext, ['id' => $evalid]);
 
-        if ($area->isnamefield == 2) {
+        if ((int)$area->areatype === constants::M_AREATYPE_USERNAME) {
             $user = $DB->get_record('user', ['username' => trim($ocrtext), 'deleted' => 0]);
             if ($user) {
                 $DB->set_field('paper_evaluations', 'userid', $user->id, ['id' => $evalid]);

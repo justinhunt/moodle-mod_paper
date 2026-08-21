@@ -35,6 +35,29 @@ class constants {
     const M_PAGE_W_MM = 210;
     const M_PAGE_H_MM = 297;
 
+    // Response area types (paper_response_areas.areatype). Use the utils::is_*_area()
+    // predicates rather than comparing these directly, so that adding a type later does not
+    // mean re-auditing every call site.
+    /** @var int Standard response: OCR, correct, feedback, grade. */
+    const M_AREATYPE_GRADED = 0;
+    /** @var int Free-text student name. */
+    const M_AREATYPE_NAME = 1;
+    /** @var int Moodle username, matched to a user account. */
+    const M_AREATYPE_USERNAME = 2;
+    /** @var int No OCR; a cropped image snippet is rendered instead. */
+    const M_AREATYPE_DISPLAYONLY = 3;
+    /** @var int OCR only: printed verbatim, no correction/feedback/grade. */
+    const M_AREATYPE_UNGRADED = 4;
+
+    /** @var array All valid area types, used to validate submitted setup form values. */
+    const M_AREATYPES = [
+        self::M_AREATYPE_GRADED,
+        self::M_AREATYPE_NAME,
+        self::M_AREATYPE_USERNAME,
+        self::M_AREATYPE_DISPLAYONLY,
+        self::M_AREATYPE_UNGRADED,
+    ];
+
     // Languages
     const M_LANG_ENUS = 'en-US';
     const M_LANG_ENGB = 'en-GB';

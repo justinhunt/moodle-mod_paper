@@ -1,4 +1,3 @@
-<?php
 // This file is part of Moodle - https://moodle.org/
 //
 // Moodle is free software: you can redistribute it and/or modify
@@ -15,20 +14,24 @@
 // along with Moodle.  If not, see <https://www.gnu.org/licenses/>.
 
 /**
- * Version details.
+ * Shared constants, mirroring the PHP side.
  *
- * @package    mod_paper
+ * Keep in step with classes/constants.php - these values are written to the database and
+ * rendered into the page by the same code, so the two must agree.
+ *
+ * @module     mod_paper/constants
  * @copyright  2024 Justin Hunt <poodllsupport@gmail.com>
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+define([], function() {
+    "use strict";
 
-defined('MOODLE_INTERNAL') || die();
-
-$plugin->version   = 2024042711;
-$plugin->requires  = 2021051700; // Moodle 3.11 for basic compat, we target 5.1+
-$plugin->cron      = 0;
-$plugin->component = 'mod_paper';
-$plugin->maturity  = MATURITY_ALPHA;
-$plugin->release   = 'v0.1';
-$plugin->dependencies = [
-];
+    return {
+        // Response area types (paper_response_areas.areatype).
+        AREATYPE_GRADED: 0,
+        AREATYPE_NAME: 1,
+        AREATYPE_USERNAME: 2,
+        AREATYPE_DISPLAYONLY: 3,
+        AREATYPE_UNGRADED: 4,
+    };
+});

@@ -78,24 +78,28 @@
                             <legend class="w-auto px-2 font-weight-bold" style="font-size: 1rem;">{{#str}}fieldrole, mod_paper{{/str}}</legend>
                             <p class="text-muted small mb-3">{{#str}}fieldrole_help, mod_paper{{/str}}</p>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input namefield-radio" type="radio" name="namefieldtype[{{id}}]" id="nft_standard_{{id}}" value="0" {{#namefield_standard}}checked{{/namefield_standard}}>
-                                <label class="form-check-label" for="nft_standard_{{id}}">{{#str}}fieldrole_standard, mod_paper{{/str}}</label>
+                                <input class="form-check-input areatype-radio" type="radio" name="areatype[{{id}}]" id="at_graded_{{id}}" value="0" {{#areatype_graded}}checked{{/areatype_graded}}>
+                                <label class="form-check-label" for="at_graded_{{id}}">{{#str}}fieldrole_standard, mod_paper{{/str}}</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input namefield-radio" type="radio" name="namefieldtype[{{id}}]" id="nft_fullname_{{id}}" value="1" {{#namefield_fullname}}checked{{/namefield_fullname}}>
-                                <label class="form-check-label" for="nft_fullname_{{id}}">{{#str}}fieldrole_fullname, mod_paper{{/str}}</label>
+                                <input class="form-check-input areatype-radio" type="radio" name="areatype[{{id}}]" id="at_name_{{id}}" value="1" {{#areatype_name}}checked{{/areatype_name}}>
+                                <label class="form-check-label" for="at_name_{{id}}">{{#str}}fieldrole_fullname, mod_paper{{/str}}</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input namefield-radio" type="radio" name="namefieldtype[{{id}}]" id="nft_username_{{id}}" value="2" {{#namefield_username}}checked{{/namefield_username}}>
-                                <label class="form-check-label" for="nft_username_{{id}}">{{#str}}fieldrole_username, mod_paper{{/str}}</label>
+                                <input class="form-check-input areatype-radio" type="radio" name="areatype[{{id}}]" id="at_username_{{id}}" value="2" {{#areatype_username}}checked{{/areatype_username}}>
+                                <label class="form-check-label" for="at_username_{{id}}">{{#str}}fieldrole_username, mod_paper{{/str}}</label>
                             </div>
                             <div class="form-check form-check-inline">
-                                <input class="form-check-input namefield-radio" type="radio" name="namefieldtype[{{id}}]" id="nft_displayonly_{{id}}" value="3" {{#namefield_displayonly}}checked{{/namefield_displayonly}}>
-                                <label class="form-check-label" for="nft_displayonly_{{id}}">{{#str}}fieldrole_displayonly, mod_paper{{/str}}</label>
+                                <input class="form-check-input areatype-radio" type="radio" name="areatype[{{id}}]" id="at_displayonly_{{id}}" value="3" {{#areatype_displayonly}}checked{{/areatype_displayonly}}>
+                                <label class="form-check-label" for="at_displayonly_{{id}}">{{#str}}fieldrole_displayonly, mod_paper{{/str}}</label>
+                            </div>
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input areatype-radio" type="radio" name="areatype[{{id}}]" id="at_ungraded_{{id}}" value="4" {{#areatype_ungraded}}checked{{/areatype_ungraded}}>
+                                <label class="form-check-label" for="at_ungraded_{{id}}">{{#str}}fieldrole_ungraded, mod_paper{{/str}}</label>
                             </div>
                         </fieldset>
 
-                        <div class="standard-fields-wrapper" {{#isnamefield}}style="display: none;"{{/isnamefield}}>
+                        <div class="standard-fields-wrapper" {{#hidestandardfields}}style="display: none;"{{/hidestandardfields}}>
                             <fieldset class="border p-3 mb-3">
                                 <legend class="w-auto px-2 font-weight-bold" style="font-size: 1rem;">{{#str}}questiontopic, mod_paper{{/str}}</legend>
                                 <p class="text-muted small mb-3">{{#str}}questiontopic_help, mod_paper{{/str}}</p>
