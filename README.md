@@ -52,6 +52,18 @@ Contact Poodll to get access: [https://poodll.com/contact](https://poodll.com/co
 - `mod/paper:submit`: Allow students to view their evaluations.
 - `mod/paper:manage`: Allow teachers to setup templates, process scans, and grade work.
 
+## Tips
+
+- When designing your worksheet, make sure that there is adequate spacing between response areas. Even when scanning with a sheet feeder each paper is not always at the same position on the scanner. So Poodll Paper takes a wide margin (configurable and defaults to: 5mm ) around each area before performing OCR.
+
+- Provide boxes for students to write in on the worksheet and instruct them to write clearly and within the box borders. This helps prevent students writing outside the area delineated for OCR to process
+
+- Leave some space on the right of graded response areas for the grade to be printed. 
+
+- If you want AI to give feedback/comments create an area(s) for it on the worksheet. You can specify the position and size of the feedback area in the settings for the associated response area on the setup page. 
+
+- Poodll Paper performs OCR. If you need CPR you should call an ambulance.
+
 ## Developer Documentation
 
 Dev details for you and for development agents are at: [DEVELOPER.md](DEVELOPER.md).
