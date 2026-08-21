@@ -49,7 +49,7 @@ OCR is the pipeline's bottleneck: a batch costs **pages × response areas** sepa
 - **`submission_processor::process_batch()` runs in three phases**: (1) `build_crop_jobs()` decodes each page **once** and writes every crop to a temp file; (2) `run_ocr_jobs()` sends them all concurrently, base64-encoding each crop lazily so peak memory tracks requests in flight, not batch size; (3) `save_ocr_jobs()` writes the rows in page → `responsenumber ASC` order. Phase 3 ordering is **required**: `apply_name_field()` writes to the shared `paper_evaluations` row, so multi-name-field last-wins is only deterministic if the writes are ordered even though the OCR was not. The `paper_evaluations` row is also created in phase 3, not up front, so `external_api::check_status()`'s progress count keeps climbing.
 - **`evaluation_processor::process_paper()`** collects all areas first, then grades them in one fan-out via `batch_process_evaluations_multi()`.
 
-**Failure handling is deliberately status-aware.** `mod_minilesson`'s equivalent (`aimanager::generate_images()`) infers failure purely from the response body, which is safe for image generation but *not* for OCR: an empty result could equally mean "the response box was blank" or "the request failed". So the runner inspects `curl_multi_info_read()` errno and HTTP status, retries only transient failures (connection errors, 429, 5xx) over two backoff rounds, treats an undecodable body as an error rather than empty text, and guarantees one result entry per input key. Callers get an explicit `error` per key and never conflate it with an empty answer — a failed OCR still writes its `paper_eval_items` row (with empty `ocrtext`) rather than dropping it, which would otherwise hide the area from the review page and silently shrink `totalgrade`.
+**Failure handling is deliberately status-aware.** The runner inspects `curl_multi_info_read()` errno and HTTP status, retries only transient failures (connection errors, 429, 5xx) over two backoff rounds, treats an undecodable body as an error rather than empty text, and guarantees one result entry per input key. Callers get an explicit `error` per key and never conflate it with an empty answer — a failed OCR still writes its `paper_eval_items` row (with empty `ocrtext`) rather than dropping it, which would otherwise hide the area from the review page and silently shrink `totalgrade`.
 
 Related settings: `mod_paper/openaiconcurrency` and `mod_paper/openaitimeout` (per-request seconds, default 120; a connect timeout of 10s is fixed in code).
 
@@ -123,7 +123,7 @@ font they currently resolve to.
 
 #### The font list (`utils::get_font_keys()`)
 
-Only fonts Moodle actually ships in `lib/tcpdf/fonts/` may be listed. `cid0kr` was offered for
+Only fonts Moodle actually ships in `lib/tcpdf/fonts/` may be listed. Initially `cid0kr` was offered for
 Korean until it turned out Moodle does not ship it — picking it threw
 `TCPDF ERROR: Could not include font definition file: cid0kr`. Korean is `hysmyeongjostdmedium`.
 
@@ -159,7 +159,7 @@ Two rendering caveats worth knowing before chasing a "bug":
 Declared as `mod_paper\constants::M_AREATYPE_*`. Almost no code compares these values
 directly — use the predicates on `mod_paper\utils` (`is_graded_area()`, `is_name_area()`,
 `is_displayonly_area()`, `has_ocr_text()`) so a new type does not mean re-auditing every
-call site. The column was named `isnamefield` before version `2024042711`.
+call site. 
 
 | Value | Constant | OCR? | Correction / feedback / grade | Notes |
 | :--- | :--- | :--- | :--- | :--- |
