@@ -344,6 +344,9 @@ $string['previousstudent'] = 'Previous Student';
 $string['nextstudent'] = 'Next Student';
 $string['feedbacklabel'] = 'Feedback: {$a}';
 
+$string['enabledebugfeatures'] = 'Enable debug features for developers';
+$string['enabledebugfeatures_desc'] = 'When enabled, the Developer button appears on the reports page, giving access to tools for inspecting how a submission was processed. Off by default - these are for working on the plugin, not for teaching with. Turning this off also blocks the Developer page itself, not just the button.';
+$string['debugfeaturesdisabled'] = 'Developer tools are turned off for this site. An administrator can enable them with the "Enable debug features for developers" setting in the Paper activity settings.';
 $string['savedebugcrops'] = 'Save debug crops';
 $string['savedebugcrops_desc'] = 'When enabled, processing a submission additionally saves every response area\'s cropped image (not just display-only snippets) so they can be inspected on the Developer page. Off by default - adds one extra stored image per response area per submission.';
 $string['developer'] = 'Developer';

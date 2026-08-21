@@ -68,9 +68,9 @@ All tables use the `paper_` prefix:
 | `intro` / `introformat` | TEXT / INT(4) | Activity description |
 | `namefieldrole` | VARCHAR(20) | Matching role (`username` or free text) |
 | `targetlanguage` | VARCHAR(50) | Target language (e.g. `English`, `ja-JP`) |
-| `targetlanguagefont` | VARCHAR(50) | Font used for target language (e.g. `courier`, `freesans`) |
+| `targetlanguagefont` | VARCHAR(50) | Font used for target language (default `freemono`) |
 | `feedbacklanguage` | VARCHAR(50) | Language for feedback |
-| `feedbacklanguagefont` | VARCHAR(50) | Font used for feedback text |
+| `feedbacklanguagefont` | VARCHAR(50) | Font used for feedback text (default `freeserif`) |
 | `grade` | INT(10) | Maximum grade (default 100) |
 | `showtotalscore` | INT(2) | Flag (0/1) whether to print total score on evaluation |
 
@@ -241,6 +241,7 @@ public/mod/paper/
 ├── reports.php             # Submissions report page
 ├── setup.php               # Template area setup page
 ├── view_eval.php           # Individual evaluation review and manual editing controller
+├── developer.php           # Inspection tools; gated behind the debug features setting
 ├── settings.php            # Admin global plugin settings (API key, ghostscript path, font defaults)
 └── mod_form.php            # Activity instance creation form
 ```
@@ -289,6 +290,14 @@ evaluation rides along on every redirect as `previewevalid`. `alignment.js` swap
 PDF viewer will otherwise happily re-show what it already has for an unchanged URL.
 
 ---
+
+### F. Developer Tools (`developer.php`)
+
+Off unless the `enabledebugfeatures` admin setting is on — check it via
+`utils::debug_features_enabled()`, never by reading the config directly. The setting hides the
+Developer button on `reports.php` *and* guards the page itself, since hiding a button leaves the
+URL working. `savedebugcrops` is the related setting that decides whether there is anything
+extra for the page to show.
 
 ## 6. Past Development History & Conversation Log
 

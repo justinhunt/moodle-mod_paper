@@ -145,6 +145,18 @@ class utils {
     }
 
     /**
+     * Whether the developer-facing debug features are turned on for this site.
+     *
+     * Off by default: these are inspection tools for working on the plugin, not something a
+     * teacher should meet in the normal run of things.
+     *
+     * @return bool
+     */
+    public static function debug_features_enabled() {
+        return (bool) get_config(constants::M_COMPONENT, 'enabledebugfeatures');
+    }
+
+    /**
      * The font keys we can safely hand to TCPDF, in the order they are offered.
      *
      * Separate from get_font_options() so that validating a stored font does not build (and

@@ -30,6 +30,11 @@ if ($ADMIN->fulltree) {
         get_string('ghostscriptpath_desc', 'mod_paper'),
         '/usr/bin/gs'));
 
+    $settings->add(new admin_setting_configcheckbox('mod_paper/enabledebugfeatures',
+        get_string('enabledebugfeatures', 'mod_paper'),
+        get_string('enabledebugfeatures_desc', 'mod_paper'),
+        0));
+
     $settings->add(new admin_setting_configcheckbox('mod_paper/savedebugcrops',
         get_string('savedebugcrops', 'mod_paper'),
         get_string('savedebugcrops_desc', 'mod_paper'),

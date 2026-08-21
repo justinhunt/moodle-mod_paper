@@ -178,11 +178,13 @@ $templatecontext['actionbuttons'][] = [
     'text' => get_string('scanalignment', 'mod_paper'),
     'class' => 'btn btn-secondary',
 ];
-$templatecontext['actionbuttons'][] = [
-    'url' => (new moodle_url('/mod/paper/developer.php', ['id' => $cm->id]))->out(false),
-    'text' => get_string('developer', 'mod_paper'),
-    'class' => 'btn btn-secondary',
-];
+if (\mod_paper\utils::debug_features_enabled()) {
+    $templatecontext['actionbuttons'][] = [
+        'url' => (new moodle_url('/mod/paper/developer.php', ['id' => $cm->id]))->out(false),
+        'text' => get_string('developer', 'mod_paper'),
+        'class' => 'btn btn-secondary',
+    ];
+}
 
 echo $OUTPUT->render_from_template('mod_paper/reports_page', $templatecontext);
 

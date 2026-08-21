@@ -42,6 +42,12 @@ require_login($course, true, $cm);
 $context = context_module::instance($cm->id);
 require_capability('mod/paper:manage', $context);
 
+// Hiding the button on reports.php is not enough on its own - the URL still works, and the
+// setting reads as turning the feature off rather than just tidying it out of sight.
+if (!utils::debug_features_enabled()) {
+    throw new moodle_exception('debugfeaturesdisabled', 'mod_paper');
+}
+
 $PAGE->set_url('/mod/paper/developer.php', ['id' => $cm->id]);
 $PAGE->set_title(get_string('developer', 'mod_paper'));
 $PAGE->set_heading(format_string($course->fullname));
