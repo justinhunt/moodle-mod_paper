@@ -80,7 +80,7 @@ All tables use the `paper_` prefix:
 | `id` | INT(10) PK | Primary key |
 | `paperid` | INT(10) FK | Reference to `mdl_paper.id` |
 | `responsenumber` | INT(10) | Area index (1, 2, 3...) |
-| `isnamefield` | INT(2) | 1 if this box captures student name |
+| `areatype` | INT(2) | Role of this area — see the table below (`mod_paper\constants::M_AREATYPE_*`) |
 | `box_x`, `box_y`, `box_w`, `box_h` | DECIMAL(10,2) | Response bounding box coordinates (% of page width/height) |
 | `fb_x`, `fb_y`, `fb_w`, `fb_h` | DECIMAL(10,2) | Independent feedback area bounding box coordinates |
 | `question` | TEXT | Question prompt / instructions |
@@ -92,6 +92,21 @@ All tables use the `paper_` prefix:
 | `gradingmode` | VARCHAR(20) | `none`, `incorrect`, `overall` |
 | `maxgrade` | DECIMAL(10,2) | Max points for this response area |
 | `gradeinstructions` | TEXT | Custom prompt instructions for AI grading |
+
+#### Area types (`areatype`)
+
+Declared as `mod_paper\constants::M_AREATYPE_*`. Almost no code compares these values
+directly — use the predicates on `mod_paper\utils` (`is_graded_area()`, `is_name_area()`,
+`is_displayonly_area()`, `has_ocr_text()`) so a new type does not mean re-auditing every
+call site. The column was named `isnamefield` before version `2024042711`.
+
+| Value | Constant | OCR? | Correction / feedback / grade | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| 0 | `M_AREATYPE_GRADED` | Yes | Yes | Standard response area. The only type that contributes to `maxgrade` totals and the printed total score. |
+| 1 | `M_AREATYPE_NAME` | Yes | No | Free-text student name; written to `paper_evaluations.studentnametext`. Bottom-aligned when printed. |
+| 2 | `M_AREATYPE_USERNAME` | Yes | No | As above, and matched against `user.username` to set `paper_evaluations.userid`. |
+| 3 | `M_AREATYPE_DISPLAYONLY` | No | No | Cropped wide (`utils::pad_box()`), saved as a `responsesnippet` image and reproduced as an image rather than text. |
+| 4 | `M_AREATYPE_UNGRADED` | Yes | No | Handwriting is read and printed back verbatim. Behaviour beyond this is not implemented yet. |
 
 ### `mdl_paper_evaluations` (Per-Submission Master Record)
 | Field | Type | Description |
@@ -185,7 +200,17 @@ public/mod/paper/
 - Computes word-level diffs between raw OCR text and corrected text.
 - Generates HTML with red strikethrough (`<span class="paper_del">`) for mistakes and green bold (`<span class="paper_ins">`) for corrections.
 
-### C. PDF Generation (`classes/pdf_processor.php`)
+### C. Review Sidebar (`view_eval.php` + `amd/src/view_eval.js`)
+Clicking a response area on the worksheet opens an editing sidebar backed by two web service calls in `classes/external/external_api.php`:
+
+- **`mod_paper_update_eval_item`** saves grade, original (OCR) text, corrected text and feedback. Both texts are editable: the printed correction is `utils::build_combined_diff($ocrtext, $correctedtext)`, so a misread word would otherwise show up as a correction the student never needed. Sending `ocrtext` as `null` leaves the stored text untouched, which is what a display-only area (no OCR text of its own) does.
+- **`mod_paper_reevaluate_eval_item`** is the single-item counterpart of `re_evaluate.php`: it puts one item back into the pending state (NULL `correctedtext`/`feedback`/`itemgrade`), then calls `evaluation_processor::evaluate_area()` **synchronously** rather than queueing the adhoc task, so the teacher sees the new result immediately. Any OCR text sent with the call is saved first, so an unsaved sidebar fix is what gets graded. If the AI returns nothing the item is deliberately left pending, so the next scheduled evaluation run retries it. `evaluate_area()` reports progress with `mtrace()`, which echoes into the response body outside CLI — the call is wrapped in `ob_start()`/`ob_end_clean()` to keep it out of the JSON.
+
+Grades are held to the response area's `maxgrade` in both places: `view_eval.php` passes it through as `data-maxgrade` for the `max` attribute on the input, and `external_api::clamp_grade()` clamps server-side, since a web service cannot trust the widget. A NULL `maxgrade` (only possible on rows not created by `setup.php`) means no maximum was ever configured and is left uncapped.
+
+Editing a name/username area writes back to `paper_evaluations.studentnametext`, falling back to the OCR text when there is no corrected text — name areas never reach stage 2, so the teacher's fix normally lands in the OCR box. A corrected username re-links `paper_evaluations.userid`, the same way `submission_processor::apply_name_field()` does on first OCR.
+
+### D. PDF Generation (`classes/pdf_processor.php`)
 - Uses TCPDF loaded via Moodle core.
 - Loads the original blank worksheet background image.
 - Prints student name at top.

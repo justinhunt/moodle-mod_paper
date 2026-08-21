@@ -41,7 +41,9 @@
                      style="{{style}}"
                      data-item-id="{{itemid}}"
                      data-area-id="{{id}}"
-                     data-is-name-field="{{isnamefield}}"
+                     data-areatype="{{areatype}}"
+                     data-maxgrade="{{maxgrade}}"
+                     data-hasocr="{{hasocr}}"
                      data-ocr="{{ocr}}"
                      data-corrected="{{corrected}}"
                      data-feedback="{{feedback}}"
@@ -73,13 +75,13 @@
                 <input type="hidden" name="areaid" id="field-areaid">
                 
                 <div class="form-group" id="group-grade">
-                    <label>{{#str}}grade, mod_paper{{/str}}</label>
-                    <input type="number" step="0.5" name="grade" id="field-grade" class="form-control">
+                    <label for="field-grade">{{#str}}grade, mod_paper{{/str}} <span id="grade-max-hint" class="text-muted"></span></label>
+                    <input type="number" step="0.5" min="0" name="grade" id="field-grade" class="form-control">
                 </div>
 
-                <div class="form-group">
-                    <label>{{#str}}originaltextreadonly, mod_paper{{/str}}</label>
-                    <div id="field-ocr-readonly" class="p-2 border rounded bg-white" style="min-height: 50px; font-style: italic; color: #666;"></div>
+                <div class="form-group" id="group-ocr">
+                    <label for="field-ocrtext">{{#str}}originaltext, mod_paper{{/str}}</label>
+                    <textarea name="ocrtext" id="field-ocrtext" class="form-control" rows="4"></textarea>
                 </div>
 
                 <div class="form-group">
@@ -93,6 +95,7 @@
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-block" id="btn-save-item">{{#str}}savechanges, mod_paper{{/str}}</button>
+                <button type="button" class="btn btn-outline-secondary btn-block" id="btn-reevaluate-item">{{#str}}reevaluateitem, mod_paper{{/str}}</button>
                 <button type="button" class="btn btn-link btn-block" id="btn-cancel-edit">{{#str}}cancel, mod_paper{{/str}}</button>
             </form>
         </div>

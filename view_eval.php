@@ -25,6 +25,9 @@
 require('../../config.php');
 require_once('lib.php');
 
+use mod_paper\constants;
+use mod_paper\utils;
+
 $id = required_param('id', PARAM_INT); // Course module ID
 $evalid = required_param('evalid', PARAM_INT); // Evaluation ID
 
@@ -44,7 +47,9 @@ $PAGE->set_heading(format_string($course->fullname));
 $currenteval = $DB->get_record('paper_evaluations', ['id' => $evalid, 'paperid' => $paper->id], '*', MUST_EXIST);
 
 // Calculate total possible grade
-$maxpossible = $DB->get_field_sql("SELECT SUM(maxgrade) FROM {paper_response_areas} WHERE paperid = :paperid AND isnamefield = 0", ['paperid' => $paper->id]);
+$maxsql = "SELECT SUM(maxgrade) FROM {paper_response_areas} WHERE paperid = :paperid AND areatype = :graded";
+$maxparams = ['paperid' => $paper->id, 'graded' => constants::M_AREATYPE_GRADED];
+$maxpossible = $DB->get_field_sql($maxsql, $maxparams);
 $maxpossible = round($maxpossible, 2) + 0;
 
 echo $OUTPUT->header();
@@ -113,7 +118,8 @@ if ($file) {
         $targetfontcss = \mod_paper\utils::get_css_font_family($paper->targetlanguagefont ?? 'courier');
         // Bottom-align name/username text and display-only snippets, so both sit on the box's
         // writing line regardless of how generously the box itself was drawn.
-        $valign = $area->isnamefield ? 'justify-content: flex-end;' : 'justify-content: flex-start;';
+        $bottomalign = utils::is_name_area($area) || utils::is_displayonly_area($area);
+        $valign = $bottomalign ? 'justify-content: flex-end;' : 'justify-content: flex-start;';
         $style = sprintf(
             'position: absolute; left: %s%%; top: %s%%; width: %s%%; height: %s%%; ' .
             'outline: 2px solid blue; background-color: rgba(0, 0, 255, 0.1); color: black; ' .
@@ -124,7 +130,7 @@ if ($file) {
 
         $feedbackhtml = null;
         $feedbackstyle = null;
-        if (!empty($feedback) && !$area->isnamefield && ($area->feedbackmode ?? 'none') !== 'none') {
+        if (!empty($feedback) && utils::is_graded_area($area) && ($area->feedbackmode ?? 'none') !== 'none') {
             $feedbackfontcss = \mod_paper\utils::get_css_font_family($paper->feedbacklanguagefont ?? 'freesans');
             $feedbackhtml = htmlspecialchars(html_entity_decode($feedback, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
@@ -140,7 +146,7 @@ if ($file) {
 
         $snippethtml = null;
         $snippetstyle = null;
-        if ($area->isnamefield == 3) {
+        if (utils::is_displayonly_area($area)) {
             $snippeturl = moodle_url::make_pluginfile_url($context->id, 'mod_paper', 'responsesnippet', $itemid, '/', 'snippet.jpg');
             if ($item !== null && $item->snippetx !== null && $item->snippety !== null
                     && $item->snippetw !== null && $item->snippeth !== null) {
@@ -165,22 +171,32 @@ if ($file) {
                     'style' => 'display: block; max-width: 100%; max-height: 100%; object-fit: contain; align-self: center;',
                 ]);
             }
-        } else if ($corrected !== '' && $area->grammarcorrections !== 'no' && !$area->isnamefield) {
-            $displayhtml = \mod_paper\utils::build_combined_diff($ocr, $corrected);
+        } else if ($corrected !== '' && $area->grammarcorrections !== 'no' && utils::is_graded_area($area)) {
+            $displayhtml = utils::build_combined_diff($ocr, $corrected);
         } else {
             $displayhtml = htmlspecialchars($corrected !== '' ? $corrected : $ocr);
         }
 
         $gradestyle = null;
-        $showgrade = ($grade !== null && !$area->isnamefield && ($area->gradingmode ?? 'none') !== 'none');
+        $showgrade = ($grade !== null && utils::is_graded_area($area) && ($area->gradingmode ?? 'none') !== 'none');
         if ($showgrade) {
             $gradestyle = 'position: absolute; top: -20px; right: -25px; font-weight: bold; font-size: 2em; color: green; z-index: 30; background: white; border: 1px solid green; padding: 2px 6px; border-radius: 4px;';
+        }
+
+        // maxgrade caps the grade the teacher can type in the sidebar. NULL means no cap was
+        // ever configured for this area (only possible for rows not created by setup.php),
+        // and is passed through as an empty string so the JS can tell it from a cap of 0.
+        $maxgrade = '';
+        if (utils::is_graded_area($area) && $area->maxgrade !== null) {
+            $maxgrade = round($area->maxgrade, 2) + 0;
         }
 
         $templatecontext['areas'][] = [
             'id' => $area->id,
             'itemid' => $itemid,
-            'isnamefield' => $area->isnamefield,
+            'areatype' => $area->areatype,
+            'maxgrade' => $maxgrade,
+            'hasocr' => utils::has_ocr_text($area) ? 1 : 0,
             'ocr' => $ocr,
             'corrected' => $corrected,
             'feedback' => $feedback,

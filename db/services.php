@@ -37,4 +37,11 @@ $functions = [
         'type'        => 'write',
         'ajax'        => true,
     ],
+    'mod_paper_reevaluate_eval_item' => [
+        'classname'   => 'mod_paper\external\external_api',
+        'methodname'  => 'reevaluate_eval_item',
+        'description' => 'Re-run AI correction, feedback and grading for a single evaluation item',
+        'type'        => 'write',
+        'ajax'        => true,
+    ],
 ];

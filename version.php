@@ -24,7 +24,7 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2024042711;
+$plugin->version   = 2024042712;
 $plugin->requires  = 2021051700; // Moodle 3.11 for basic compat, we target 5.1+
 $plugin->cron      = 0;
 $plugin->component = 'mod_paper';
